@@ -5,7 +5,7 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { v4: uuidv4 } = require('uuid');
-const { connectDB } = require('./config/db');
+const { connectDB, initializeRoleConnections } = require('./config/db');
 const InterviewSession = require('./models/InterviewSession');
 const authMiddleware = require('./middleware/auth');
 
@@ -414,7 +414,10 @@ app.get('/api/session/:sessionId', (req, res) => {
 
 // Connect DB then start server
 const PORT = process.env.PORT || 3001;
-connectDB(process.env.MONGO_URI).then(() => {
+connectDB(process.env.MONGO_URI).then(async () => {
+  // Initialize role-based database connections
+  await initializeRoleConnections(process.env.MONGO_URI);
+  
   server.listen(PORT, () => {
     console.log(`AI Interview Server running on port ${PORT}`);
     console.log(`CORS enabled for origins: ${allowedOrigins.join(', ')}`);

@@ -18,7 +18,7 @@ const LoginPage = ({ onLogin }) => {
     setIsLoading(true);
 
     try {
-      const data = await api.login({ username, password });
+      const data = await api.login({ username, password, role: userType });
       localStorage.setItem('token', data.token);
       onLogin(data.user);
     } catch (e) {
