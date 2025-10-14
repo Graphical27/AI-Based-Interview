@@ -5,11 +5,12 @@ A comprehensive AI-powered interview system with real-time voice interaction, we
 ## 🚀 Features
 
 ### Backend Features:
-- **Gemini AI Integration**: Uses Google's Gemini API for intelligent interview conversations
-- **RAG (Retrieval-Augmented Generation)**: AI remembers all past interview context and adapts questions accordingly
-- **Real-time Communication**: WebSocket support for instant messaging
-- **Interview Memory System**: Tracks conversation phases and topics
-- **Session Management**: Each interview session maintains its own context
+- **Gemini AI Integration**: (optional) Uses Google's Gemini API for intelligent interview conversations
+- **Adaptive Interview Memory**: AI remembers past context, phases, difficulty, and topics
+- **Real-time Communication**: Socket.io for instant AI ↔ user messaging
+- **MongoDB Persistence**: Users, Jobs, Applications, Interview Sessions stored in Mongo Atlas
+- **JWT Auth**: Secure stateless auth with role-based endpoints (student / recruiter / admin)
+- **RESTful API**: Jobs, Users, Dashboard summary, Authentication
 
 ### Frontend Features:
 - **Chat Interface**: Clean, modern chat UI showing AI and user messages
@@ -21,8 +22,8 @@ A comprehensive AI-powered interview system with real-time voice interaction, we
 - **Interview Phases**: Visual indicators for different interview stages
 
 ### User Experience:
-- **Login System**: Secure authentication (currently hardcoded for demo)
-- **Dashboard**: Overview of interview stats and quick access to AI interview
+- **Login System**: Secure JWT authentication (register & login)
+- **Dashboard**: Dynamic stats from persisted data (applications, interviews, success rate)
 - **Real-time Mock Interview**: Simulates actual interview conditions
 - **Adaptive Questions**: AI adjusts difficulty and topics based on responses
 - **Professional Interface**: Modern, clean design with smooth animations
@@ -30,8 +31,9 @@ A comprehensive AI-powered interview system with real-time voice interaction, we
 ## 🛠️ Setup Instructions
 
 ### Prerequisites
-- Node.js (v14 or higher)
-- Google Gemini API key
+- Node.js (v18+ recommended)
+- MongoDB Atlas account (or local MongoDB)
+- Google Gemini API key (optional for AI responses; stubbed responses without it)
 
 ### 1. Clone and Install Dependencies
 
@@ -47,17 +49,19 @@ npm install
 
 ### 2. Environment Configuration
 
-The `.env` file contains:
+Copy `.env.example` to `.env` and fill values:
 
 ```env
-# Environment Variables
-GEMINI_API_KEY="YOUR_ACTUAL_GEMINI_API_KEY_HERE"
-NODE_ENV=development
 PORT=3001
-CORS_ORIGIN=http://localhost:5174
+MONGO_URI=mongodb+srv://<username>:<password>@cluster0.4qljlwn.mongodb.net/ai_interview?retryWrites=true&w=majority&appName=Cluster0
+JWT_SECRET=replace_with_long_random_string
+GEMINI_API_KEY=optional_key_for_ai
+CORS_ORIGIN=http://localhost:5173
 ```
 
-**Important**: Replace the API key with your actual Google Gemini API key.
+Notes:
+- If `GEMINI_API_KEY` is missing, backend returns stub AI responses (still functional for flow testing).
+- `MONGO_URI` can be a local instance: `mongodb://127.0.0.1:27017/ai_interview`.
 
 ### 3. Get Your Gemini API Key
 
@@ -85,7 +89,7 @@ The frontend will run on http://localhost:5174
 ### 5. Access the Application
 
 1. Open your browser and go to http://localhost:5174
-2. Login with any username/password (authentication is hardcoded for demo)
+2. Register a new user (or login if already created). Authentication now uses the database.
 3. From the dashboard, click "AI Interview" or "Start AI Interview"
 4. Allow microphone and camera permissions when prompted
 5. Start your AI-powered mock interview!
@@ -114,10 +118,12 @@ The frontend will run on http://localhost:5174
 ## 🏗️ Technical Architecture
 
 ### Backend Stack:
-- **Express.js**: Web framework
-- **Socket.io**: Real-time communication
-- **Google Gemini API**: AI conversation engine
-- **Node.js**: Runtime environment
+- **Express.js** (REST API & middleware)
+- **Socket.io** (real-time AI interview stream)
+- **MongoDB + Mongoose** (persistence layer)
+- **JWT** (auth & role-based access)
+- **Google Gemini API** (AI generation – optional)
+- **bcryptjs** (password hashing)
 
 ### Frontend Stack:
 - **React**: UI framework
@@ -135,25 +141,65 @@ The frontend will run on http://localhost:5174
 
 ---
 
-**Note**: This application uses the Google Gemini API. Make sure you have an active API key and understand the usage limits and pricing associated with the service.  
-- **Database:** [PostgreSQL](https://www.postgresql.org/) (Serverless via [Neon](https://neon.tech/))  
-- **ORM:** [Drizzle ORM](https://orm.drizzle.team/)  
+**Note**: Google Gemini API is optional; without it a stub AI response path operates for development.
+**Database:** MongoDB (Atlas or local)
+**ODM:** Mongoose
 
 ---
 
-## 📦 Getting Started  
+## 📦 API Overview
 
-Follow these steps to set up the project locally:  
+### Auth
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| POST | /api/auth/register | username, email, password, role? | Create user |
+| POST | /api/auth/login | username, password | Obtain JWT |
 
+### Jobs
+| Method | Endpoint | Query/Body | Notes |
+| GET | /api/jobs | q, category, type, remote, urgent, verified, page, pageSize | Public list |
+| GET | /api/jobs/:id |  | Job detail |
+| POST | /api/jobs | job fields | Recruiter/Admin |
+| PUT | /api/jobs/:id | job fields | Owner/Admin |
+| DELETE | /api/jobs/:id |  | Owner/Admin |
+
+### Dashboard
+| GET | /api/dashboard/summary | (auth) | Returns counts + recommendedJobs |
+
+### User
+| GET | /api/users/me | (auth) | Current user |
+| GET | /api/users/saved-jobs | (auth) | Saved jobs list |
+| POST | /api/users/saved-jobs/:jobId | (auth) | Save job |
+| DELETE | /api/users/saved-jobs/:jobId | (auth) | Unsave job |
+
+### Interview (Socket.io)
+Namespace: default
+Events:
+- `start-interview` (userProfile) → server emits `ai-response`
+- `user-message` (message, sessionId)
+- `ai-response` (message, phase, sessionId)
+- `get-history` (sessionId) → `interview-history`
+
+Session transcripts persisted in `InterviewSession` collection.
+
+## 🔐 Security
+* Passwords hashed (bcryptjs, 10 rounds)
+* JWT tokens (7d expiry) – store in `localStorage` for demo; move to httpOnly cookies for production
+* CORS restricted via `CORS_ORIGIN`
+* Never commit real credentials – `.env.example` provided instead
+
+## 🧪 Testing
+Use `backend/test.http` (REST Client) or curl.
+
+Example registration:
 ```bash
-# Clone the repository
-git clone https://github.com/modamaan/Ai-mock-Interview.git  
+curl -X POST http://localhost:3001/api/auth/register \
+	-H "Content-Type: application/json" \
+	-d '{"username":"demo","email":"demo@example.com","password":"Password123!"}'
+```
 
-# Navigate into the project directory
-cd ai-mock-interview  
-
-# Install dependencies
-npm install   # or yarn install  
-
-# Start the development server
-npm run dev   # or yarn dev  
+## 🧩 Next Improvements
+- Add pagination & sorting to jobs on frontend (currently client-filtered)
+- Add Application creation endpoint & integrate "Apply" button
+- Add profile editing & resume upload (use Multer + S3/Cloud storage)
+- Enhance AI scoring/feedback after interview ends

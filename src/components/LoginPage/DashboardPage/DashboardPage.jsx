@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './DashboardPage.css';
 import DashboardCard from './DashboardCard'; // Reusable component for job cards
+import { api } from '../../../services/api';
 
 const DashboardPage = ({ onLogout }) => {
   const navigate = useNavigate();
@@ -9,6 +10,32 @@ const DashboardPage = ({ onLogout }) => {
   const handleStartInterview = () => {
     navigate('/interview');
   };
+
+  const [summary, setSummary] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await api.dashboardSummary();
+        if (mounted) {
+          setSummary(data);
+          setJobs(data.recommendedJobs || []);
+        }
+      } catch (e) {
+        setError('Failed to load dashboard');
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  if (loading) return <div className="dashboard-layout"><main className="dashboard-main-content"><p>Loading...</p></main></div>;
+  if (error) return <div className="dashboard-layout"><main className="dashboard-main-content"><p>{error}</p></main></div>;
 
   return (
     <div className="dashboard-layout">
@@ -82,7 +109,7 @@ const DashboardPage = ({ onLogout }) => {
         <header className="dashboard-header">
           <div className="header-content">
             <div>
-              <h1>Welcome back, John!</h1>
+              <h1>Welcome back{summary?.userName ? `, ${summary.userName}` : ''}!</h1>
               <p className="header-subtitle">Here's what's happening with your job search today</p>
             </div>
             <div className="header-actions">
@@ -113,7 +140,7 @@ const DashboardPage = ({ onLogout }) => {
               </div>
               <div>
                 <h3>My Applications</h3>
-                <p className="stat-value">24</p>
+                <p className="stat-value">{summary?.applicationsCount ?? 0}</p>
                 <p className="stat-description">Active applications</p>
               </div>
             </div>
@@ -135,7 +162,7 @@ const DashboardPage = ({ onLogout }) => {
               </div>
               <div>
                 <h3>Interview Requests</h3>
-                <p className="stat-value">8</p>
+                <p className="stat-value">{summary?.interviewRequests ?? 0}</p>
                 <p className="stat-description">Pending interviews</p>
               </div>
             </div>
@@ -156,7 +183,7 @@ const DashboardPage = ({ onLogout }) => {
               </div>
               <div>
                 <h3>Success Rate</h3>
-                <p className="stat-value">33%</p>
+                <p className="stat-value">{summary?.successRate ?? 0}%</p>
                 <p className="stat-description">Interview conversion</p>
               </div>
             </div>
@@ -218,12 +245,9 @@ const DashboardPage = ({ onLogout }) => {
 
           <div className="job-cards-scroll-container">
             {/* Enhanced job cards */}
-            <DashboardCard title="Senior Software Engineer" company="TechFlow Inc." location="Remote • Full-time" color="purple" salary="$120k - $150k" />
-            <DashboardCard title="Data Scientist" company="DataMinds Analytics" location="New York • Hybrid" color="blue" salary="$110k - $140k" />
-            <DashboardCard title="UX/UI Designer" company="Creative Studio" location="London • Remote" color="pink" salary="$80k - $100k" />
-            <DashboardCard title="Product Manager" company="InnovateCorp" location="San Francisco • On-site" color="green" salary="$130k - $160k" />
-            <DashboardCard title="DevOps Engineer" company="CloudTech Solutions" location="Remote • Full-time" color="orange" salary="$115k - $145k" />
-            <DashboardCard title="Frontend Developer" company="WebCraft Agency" location="Seattle • Hybrid" color="purple" salary="$95k - $125k" />
+            {jobs.map(j => (
+              <DashboardCard key={j._id} title={j.title} company={j.company} location={`${j.location}${j.remote ? ' • Remote' : ''}`} color="purple" salary={j.salary || ''} />
+            ))}
           </div>
         </section>
 

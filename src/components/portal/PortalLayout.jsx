@@ -3,7 +3,7 @@ import JobsView from './components/JobsView';
 import DashboardView from './components/DashboardView';
 import InterviewView from './components/InterviewView';
 
-const PortalLayout = ({ onLogout }) => {
+const PortalLayout = ({ onLogout, user }) => {
   const [view, setView] = useState('jobs');
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState([
@@ -15,18 +15,18 @@ const PortalLayout = ({ onLogout }) => {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
 
-  // Auto-hide sidebar after 3 seconds of inactivity
-  useEffect(() => {
-    let timeout;
-    if (!isHovered && sidebarVisible) {
-      timeout = setTimeout(() => {
-        setSidebarVisible(false);
-      }, 3000);
-    }
-    return () => clearTimeout(timeout);
-  }, [isHovered, sidebarVisible]);
+  // Disable auto-hide functionality - keep sidebar always visible
+  // useEffect(() => {
+  //   let timeout;
+  //   if (!isHovered && sidebarVisible) {
+  //     timeout = setTimeout(() => {
+  //       setSidebarVisible(false);
+  //     }, 3000);
+  //   }
+  //   return () => clearTimeout(timeout);
+  // }, [isHovered, sidebarVisible]);
 
-  // Show sidebar on mouse movement near the left edge
+  // Show sidebar on mouse movement near the left edge (for mobile)
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (e.clientX <= 50 && !sidebarVisible) {
@@ -150,11 +150,11 @@ const PortalLayout = ({ onLogout }) => {
         <div className="p-6 border-t border-gray-800/50">
           <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/30 border border-gray-700/50">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-black font-semibold">
-              JD
+              {user?.username ? user.username.substring(0, 2).toUpperCase() : 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">John Doe</p>
-              <p className="text-xs text-gray-400">Software Engineer</p>
+              <p className="text-sm font-medium text-white truncate">{user?.username || 'User'}</p>
+              <p className="text-xs text-gray-400">{user?.role || 'Student'}</p>
             </div>
             <div className="flex items-center">
               <div className="w-2 h-2 bg-green-400 rounded-full"></div>
@@ -261,9 +261,9 @@ const PortalLayout = ({ onLogout }) => {
                 className="flex items-center gap-3 p-2 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 transition-all"
               >
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center text-black font-semibold text-sm">
-                  JD
+                  {user?.username ? user.username.substring(0, 2).toUpperCase() : 'U'}
                 </div>
-                <span className="hidden sm:inline text-sm text-white">John Doe</span>
+                <span className="hidden sm:inline text-sm text-white">{user?.username || 'User'}</span>
                 <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 24 24">
                   <path d="M7 10L12 15L17 10H7Z"/>
                 </svg>
@@ -273,8 +273,8 @@ const PortalLayout = ({ onLogout }) => {
               {profileOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl shadow-black/50 py-2 z-50">
                   <div className="px-4 py-3 border-b border-gray-800">
-                    <p className="text-sm font-medium text-white">John Doe</p>
-                    <p className="text-xs text-gray-400">john.doe@example.com</p>
+                    <p className="text-sm font-medium text-white">{user?.username || 'User'}</p>
+                    <p className="text-xs text-gray-400">{user?.email || 'user@example.com'}</p>
                   </div>
                   <div className="py-2">
                     <button 
@@ -320,9 +320,9 @@ const PortalLayout = ({ onLogout }) => {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-6 lg:p-8">
-            {view === 'jobs' && <JobsView />}
-            {view === 'dashboard' && <DashboardView />}
-            {view === 'interview' && <InterviewView />}
+            {view === 'jobs' && <JobsView user={user} />}
+            {view === 'dashboard' && <DashboardView user={user} />}
+            {view === 'interview' && <InterviewView user={user} />}
           </div>
         </main>
       </div>

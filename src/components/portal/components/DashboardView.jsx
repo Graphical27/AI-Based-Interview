@@ -1,39 +1,47 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { api } from '../../../services/api';
 
-// Mock data
-const applicationsData = [
-  { id: 1, job: 'Senior React Developer', company: 'TechCorp', status: 'interview', date: '2024-01-15', stage: 'Technical Round', salary: '$120k-$160k', progress: 75, logo: '🚀' },
-  { id: 2, job: 'Frontend Engineer', company: 'StartupXYZ', status: 'pending', date: '2024-01-10', stage: 'Application Review', salary: '$90k-$130k', progress: 25, logo: '⚡' },
-  { id: 3, job: 'Full Stack Developer', company: 'Enterprise Solutions', status: 'rejected', date: '2024-01-05', stage: 'Final Round', salary: '$100k-$140k', progress: 90, logo: '🏢' },
-  { id: 4, job: 'UI/UX Designer', company: 'Creative Studio', status: 'offer', date: '2024-01-20', stage: 'Offer Negotiation', salary: '$85k-$115k', progress: 95, logo: '🎨' },
-  { id: 5, job: 'DevOps Engineer', company: 'CloudOps', status: 'interview', date: '2024-01-12', stage: 'System Design', salary: '$130k-$165k', progress: 60, logo: '☁️' }
-];
-
-const interviewData = [
-  { id: 1, company: 'TechCorp', role: 'Senior React Developer', date: '2024-01-25', time: '2:00 PM', type: 'Technical', interviewer: 'Sarah Chen', status: 'scheduled', logo: '🚀' },
-  { id: 2, company: 'CloudOps', role: 'DevOps Engineer', date: '2024-01-22', time: '10:00 AM', type: 'Behavioral', interviewer: 'Mike Johnson', status: 'scheduled', logo: '☁️' },
-  { id: 3, company: 'StartupXYZ', role: 'Frontend Engineer', date: '2024-01-18', time: '3:30 PM', type: 'Technical', interviewer: 'Alex Kim', status: 'completed', logo: '⚡' }
-];
-
-const activityData = [
-  { id: 1, type: 'application', message: 'Applied to Senior React Developer at TechCorp', time: '2 hours ago', icon: '📄' },
-  { id: 2, type: 'interview', message: 'Interview scheduled with CloudOps for tomorrow', time: '5 hours ago', icon: '📅' },
-  { id: 3, type: 'profile', message: 'Profile viewed by 3 recruiters', time: '1 day ago', icon: '👀' },
-  { id: 4, type: 'offer', message: 'Offer received from Creative Studio', time: '2 days ago', icon: '💰' },
-  { id: 5, type: 'feedback', message: 'Interview feedback received from Enterprise Solutions', time: '3 days ago', icon: '📝' }
-];
-
-const DashboardView = () => {
+const DashboardView = ({ user }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedApplication, setSelectedApplication] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const stats = useMemo(() => ({
-    totalApplications: applicationsData.length,
-    activeApplications: applicationsData.filter(a => a.status !== 'rejected' && a.status !== 'offer').length,
-    interviews: interviewData.filter(i => i.status === 'scheduled').length,
-    offers: applicationsData.filter(a => a.status === 'offer').length,
-    responseRate: Math.round((applicationsData.filter(a => a.status !== 'pending').length / applicationsData.length) * 100)
-  }), []);
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const data = await api.dashboardSummary();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+      // Fallback to empty data
+      setDashboardData({
+        applications: [],
+        interviews: [],
+        activities: [],
+        stats: { totalApplications: 0, activeApplications: 0, interviews: 0, offers: 0, responseRate: 0 }
+      });
+    }
+    setIsLoading(false);
+  };
+
+  const stats = useMemo(() => {
+    if (!dashboardData) return { totalApplications: 0, activeApplications: 0, interviews: 0, offers: 0, responseRate: 0 };
+    
+    const applications = dashboardData.applications || [];
+    const interviews = dashboardData.interviews || [];
+    
+    return {
+      totalApplications: applications.length,
+      activeApplications: applications.filter(a => a.status !== 'rejected' && a.status !== 'offer').length,
+      interviews: interviews.filter(i => i.status === 'scheduled').length,
+      offers: applications.filter(a => a.status === 'offer').length,
+      responseRate: applications.length > 0 ? Math.round((applications.filter(a => a.status !== 'pending').length / applications.length) * 100) : 0
+    };
+  }, [dashboardData]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -53,6 +61,18 @@ const DashboardView = () => {
       default: return 'text-gray-400 bg-gray-400/10 border-gray-400/30';
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-white">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  const applications = dashboardData?.applications || [];
+  const interviews = dashboardData?.interviews || [];
+  const activities = dashboardData?.activities || [];
 
   if (activeTab === 'overview') {
     return (
@@ -156,10 +176,10 @@ const DashboardView = () => {
               </button>
             </div>
             <div className="space-y-4">
-              {applicationsData.slice(0, 4).map(app => (
+              {applications.slice(0, 4).map(app => (
                 <div key={app.id} className="flex items-center gap-4 p-4 rounded-xl bg-black/20 border border-gray-800/30 hover:bg-black/30 transition-all cursor-pointer">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-xl shadow-lg">
-                    {app.logo}
+                    {app.logo || '💼'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-white text-sm truncate">{app.job}</h4>
@@ -173,6 +193,15 @@ const DashboardView = () => {
                   </div>
                 </div>
               ))}
+              {applications.length === 0 && (
+                <div className="text-center py-8 text-gray-400">
+                  <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <p className="text-sm">No applications yet</p>
+                  <p className="text-xs mt-1">Start applying to jobs to track your progress</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -188,10 +217,10 @@ const DashboardView = () => {
               </button>
             </div>
             <div className="space-y-4">
-              {interviewData.filter(i => i.status === 'scheduled').map(interview => (
+              {interviews.filter(i => i.status === 'scheduled').map(interview => (
                 <div key={interview.id} className="flex items-center gap-4 p-4 rounded-xl bg-black/20 border border-gray-800/30 hover:bg-black/30 transition-all cursor-pointer">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-xl shadow-lg">
-                    {interview.logo}
+                    {interview.logo || '📅'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-white text-sm truncate">{interview.role}</h4>
@@ -205,7 +234,7 @@ const DashboardView = () => {
                   </div>
                 </div>
               ))}
-              {interviewData.filter(i => i.status === 'scheduled').length === 0 && (
+              {interviews.filter(i => i.status === 'scheduled').length === 0 && (
                 <div className="text-center py-8 text-gray-400">
                   <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a2 2 0 012-2h4a2 2 0 012 2v4m0 0V7a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2m8 0V9a2 2 0 00-2-2H8a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V9a2 2 0 00-2-2"/>
@@ -221,10 +250,10 @@ const DashboardView = () => {
         <div className="bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 rounded-2xl p-6">
           <h3 className="text-xl font-bold text-white mb-6">Recent Activity</h3>
           <div className="space-y-4">
-            {activityData.map(activity => (
+            {activities.map(activity => (
               <div key={activity.id} className="flex items-center gap-4 p-4 rounded-xl bg-black/20 border border-gray-800/30">
                 <div className="w-10 h-10 rounded-lg bg-gray-800/50 flex items-center justify-center text-lg">
-                  {activity.icon}
+                  {activity.icon || '📝'}
                 </div>
                 <div className="flex-1">
                   <p className="text-white text-sm">{activity.message}</p>
@@ -232,6 +261,14 @@ const DashboardView = () => {
                 </div>
               </div>
             ))}
+            {activities.length === 0 && (
+              <div className="text-center py-8 text-gray-400">
+                <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p className="text-sm">No recent activity</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

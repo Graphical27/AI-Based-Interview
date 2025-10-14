@@ -1,15 +1,20 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { api } from '../../../services/api';
+function relativeTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const diff = Date.now() - d.getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return '1 day ago';
+  if (days < 7) return `${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return '1 week ago';
+  return `${weeks} weeks ago`;
+}
 
-const jobsSeed = [
-  { id:1, title:'Senior React Developer', company:'TechFlow', location:'San Francisco, CA', type:'Full-time', salary:'$120k - $160k', remote: true, tags:['React','TypeScript','Node.js','GraphQL'], category:'Engineering', date:'2 days ago', logo:'🚀', urgent: true, verified: true, description:'We are looking for a Senior React Developer to join our dynamic team and help build the next generation of web applications.' },
-  { id:2, title:'Data Scientist', company:'DataMinds', location:'New York, NY', type:'Full-time', salary:'$110k - $145k', remote: false, tags:['Python','ML','TensorFlow','Pandas'], category:'Data', date:'1 week ago', logo:'📊', urgent: false, verified: true, description:'Join our data science team to extract insights from complex datasets and build machine learning models.' },
-  { id:3, title:'DevOps Engineer', company:'CloudOps', location:'Remote', type:'Full-time', salary:'$130k - $165k', remote: true, tags:['AWS','Docker','Kubernetes','CI/CD'], category:'Engineering', date:'3 days ago', logo:'☁️', urgent: false, verified: true, description:'Looking for a DevOps Engineer to help scale our cloud infrastructure and streamline deployment processes.' },
-  { id:4, title:'Product Manager', company:'InnovateCorp', location:'Austin, TX', type:'Full-time', salary:'$140k - $180k', remote: false, tags:['Strategy','Agile','Analytics','Roadmaps'], category:'Product', date:'5 days ago', logo:'🎯', urgent: true, verified: true, description:'Drive product strategy and execution for our flagship products. Work closely with engineering and design teams.' },
-  { id:5, title:'UX Designer', company:'Creative Studio', location:'Los Angeles, CA', type:'Contract', salary:'$85k - $115k', remote: true, tags:['Figma','Prototyping','User Research','Design Systems'], category:'Design', date:'1 day ago', logo:'🎨', urgent: true, verified: false, description:'Create exceptional user experiences for our mobile and web applications. Strong portfolio required.' },
-  { id:6, title:'Full Stack Developer', company:'ScaleDB', location:'Chicago, IL', type:'Full-time', salary:'$100k - $140k', remote: true, tags:['Node.js','React','PostgreSQL','APIs'], category:'Engineering', date:'4 days ago', logo:'⚡', urgent: false, verified: true, description:'Join our team to build scalable web applications using modern JavaScript technologies and cloud services.' },
-  { id:7, title:'Frontend Engineer', company:'StartupXYZ', location:'Seattle, WA', type:'Full-time', salary:'$95k - $130k', remote: false, tags:['Vue.js','JavaScript','CSS','HTML5'], category:'Engineering', date:'1 week ago', logo:'💻', urgent: false, verified: true, description:'Help build beautiful and responsive user interfaces for our growing platform.' },
-  { id:8, title:'Machine Learning Engineer', company:'AI Innovations', location:'Boston, MA', type:'Full-time', salary:'$140k - $170k', remote: true, tags:['Python','TensorFlow','PyTorch','MLOps'], category:'Data', date:'2 days ago', logo:'🤖', urgent: true, verified: true, description:'Build and deploy machine learning models at scale. Experience with deep learning frameworks required.' },
-];
+const jobsSeed = [];
 
 const categories = ['All','Engineering','Data','Product','Design'];
 const types = ['All','Full-time','Contract','Part-time','Internship'];
@@ -20,15 +25,69 @@ const JobsView = () => {
   const [jobType,setJobType] = useState('All');
   const [filters,setFilters] = useState({remote: false, urgent: false, verified: false});
   const [selectedJob, setSelectedJob] = useState(null);
-  const [saved,setSaved] = useState(new Set([1, 4])); // Pre-saved some jobs
+  const [saved,setSaved] = useState(new Set());
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [myApplications, setMyApplications] = useState([]);
+  const [applying, setApplying] = useState(new Set());
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await api.listJobs({ q: query, category, type: jobType, remote: filters.remote, urgent: filters.urgent, verified: filters.verified });
+        if (mounted) {
+          setJobs(data.items);
+        }
+      } catch (e) {
+        setError('Failed to load jobs');
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [query, category, jobType, filters]);
+
+  // Fetch user's applications
+  useEffect(() => {
+    const fetchMyApplications = async () => {
+      try {
+        const applications = await api.getMyApplications();
+        setMyApplications(applications);
+      } catch (error) {
+        console.error('Failed to fetch applications:', error);
+      }
+    };
+    fetchMyApplications();
+  }, []);
+
+  const handleApplyToJob = async (jobId) => {
+    setApplying(prev => new Set(prev).add(jobId));
+    try {
+      await api.applyForJob(jobId);
+      // Refresh applications
+      const applications = await api.getMyApplications();
+      setMyApplications(applications);
+    } catch (error) {
+      console.error('Failed to apply:', error);
+      alert(error.message || 'Failed to apply for job');
+    } finally {
+      setApplying(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(jobId);
+        return newSet;
+      });
+    }
+  };
   const [page,setPage] = useState(1);
   const pageSize = 6;
 
   const filtered = useMemo(()=>{
-    return jobsSeed.filter(j=>{
+    return jobs.filter(j=>{
       const matchQ = j.title.toLowerCase().includes(query.toLowerCase()) || 
                     j.company.toLowerCase().includes(query.toLowerCase()) ||
-                    j.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
+                    (j.tags||[]).some(tag => tag.toLowerCase().includes(query.toLowerCase()));
       const matchC = category==='All'|| j.category===category;
       const matchT = jobType==='All'|| j.type===jobType;
       const matchRemote = !filters.remote || j.remote;
@@ -36,7 +95,7 @@ const JobsView = () => {
       const matchVerified = !filters.verified || j.verified;
       return matchQ && matchC && matchT && matchRemote && matchUrgent && matchVerified;
     });
-  },[query,category,jobType,filters]);
+  },[jobs,query,category,jobType,filters]);
 
   const totalPages = Math.ceil(filtered.length / pageSize) || 1;
   const paged = filtered.slice((page-1)*pageSize, page*pageSize);
@@ -50,10 +109,10 @@ const JobsView = () => {
       {/* Enhanced Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {[
-          { label: 'Total Jobs', value: jobsSeed.length, icon: '💼', color: 'from-blue-400 to-blue-600' },
-          { label: 'Remote Jobs', value: jobsSeed.filter(j => j.remote).length, icon: '🏠', color: 'from-green-400 to-green-600' },
-          { label: 'Urgent Hiring', value: jobsSeed.filter(j => j.urgent).length, icon: '⚡', color: 'from-orange-400 to-orange-600' },
-          { label: 'New Today', value: jobsSeed.filter(j => j.date.includes('day')).length, icon: '🆕', color: 'from-purple-400 to-purple-600' }
+          { label: 'Total Jobs', value: jobs.length, icon: '💼', color: 'from-blue-400 to-blue-600' },
+          { label: 'Remote Jobs', value: jobs.filter(j => j.remote).length, icon: '🏠', color: 'from-green-400 to-green-600' },
+          { label: 'Urgent Hiring', value: jobs.filter(j => j.urgent).length, icon: '⚡', color: 'from-orange-400 to-orange-600' },
+          { label: 'Verified', value: jobs.filter(j => j.verified).length, icon: '✅', color: 'from-purple-400 to-purple-600' }
         ].map((stat, index) => (
           <div key={index} className="p-6 rounded-2xl bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 hover:border-gray-700/50 transition-all group">
             <div className="flex items-center justify-between">
@@ -171,11 +230,13 @@ const JobsView = () => {
 
           {/* Enhanced Job Cards */}
           <div className="space-y-6">
-            {paged.map(job => (
+            {loading && <p className="text-gray-400">Loading jobs...</p>}
+            {error && <p className="text-red-400">{error}</p>}
+            {!loading && !error && paged.map(job => (
               <div 
-                key={job.id}
+                key={job._id}
                 className={`group relative bg-gradient-to-br from-gray-900/80 to-black border rounded-2xl p-6 cursor-pointer transition-all hover:shadow-xl hover:shadow-black/20 ${
-                  selectedJob?.id === job.id 
+                  selectedJob?._id === job._id 
                     ? 'border-green-400 ring-2 ring-green-400/20 shadow-lg shadow-green-400/10' 
                     : 'border-gray-800/50 hover:border-gray-700'
                 }`}
@@ -216,7 +277,7 @@ const JobsView = () => {
                         }`}>
                           {job.type}
                         </span>
-                        <p className="text-xs text-gray-500 mt-2">{job.date}</p>
+                        <p className="text-xs text-gray-500 mt-2">{relativeTime(job.postedAt)}</p>
                       </div>
                     </div>
                     
@@ -255,14 +316,14 @@ const JobsView = () => {
                     </div>
                     
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {job.tags.slice(0, 4).map(skill => (
+                      {(job.tags||[]).slice(0, 4).map(skill => (
                         <span key={skill} className="px-3 py-1 bg-gray-800/60 text-gray-300 text-xs rounded-lg border border-gray-700/50 hover:bg-gray-700/60 transition-colors">
                           {skill}
                         </span>
                       ))}
                       {job.tags.length > 4 && (
                         <span className="px-3 py-1 bg-gray-800/60 text-gray-400 text-xs rounded-lg border border-gray-700/50">
-                          +{job.tags.length - 4} more
+                          +{(job.tags||[]).length - 4} more
                         </span>
                       )}
                     </div>
@@ -273,11 +334,34 @@ const JobsView = () => {
 
                 <div className="flex items-center justify-between pt-4 border-t border-gray-800/50">
                   <div className="flex gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-500 text-black font-semibold rounded-lg transition-all text-sm shadow-lg shadow-green-400/25">
-                      Apply Now
-                    </button>
+                    {(() => {
+                      const hasApplied = myApplications.some(app => app.job._id === job._id);
+                      const isApplying = applying.has(job._id);
+                      
+                      if (hasApplied) {
+                        const application = myApplications.find(app => app.job._id === job._id);
+                        return (
+                          <button 
+                            disabled
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-400/20 text-blue-400 border border-blue-400/30 font-semibold rounded-lg text-sm"
+                          >
+                            ✓ Applied ({application.status})
+                          </button>
+                        );
+                      }
+                      
+                      return (
+                        <button 
+                          onClick={(e) => {e.stopPropagation(); handleApplyToJob(job._id);}}
+                          disabled={isApplying}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-500 disabled:bg-gray-600 text-black font-semibold rounded-lg transition-all text-sm shadow-lg shadow-green-400/25 disabled:shadow-none"
+                        >
+                          {isApplying ? 'Applying...' : 'Apply Now'}
+                        </button>
+                      );
+                    })()}
                     <button 
-                      onClick={(e) => {e.stopPropagation(); toggleSave(job.id);}}
+                      onClick={(e) => {e.stopPropagation(); toggleSave(job._id);}}
                       className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm ${
                         saved.has(job.id) 
                           ? 'bg-green-400/20 text-green-400 border-green-400/30' 
@@ -287,7 +371,7 @@ const JobsView = () => {
                       <svg className="w-4 h-4" fill={saved.has(job.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
                       </svg>
-                      {saved.has(job.id) ? 'Saved' : 'Save'}
+                      {saved.has(job._id) ? 'Saved' : 'Save'}
                     </button>
                   </div>
                   <button 
@@ -374,7 +458,7 @@ const JobsView = () => {
                   { icon: '💰', label: 'Salary', value: selectedJob.salary },
                   { icon: selectedJob.remote ? '🏠' : '🏢', label: 'Work Type', value: selectedJob.remote ? 'Remote' : 'On-site' },
                   { icon: '⏰', label: 'Job Type', value: selectedJob.type },
-                  { icon: '📅', label: 'Posted', value: selectedJob.date }
+                  { icon: '📅', label: 'Posted', value: new Date(selectedJob.postedAt).toLocaleDateString() }
                 ].map((item, index) => (
                   <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-gray-800/30">
                     <span className="text-lg">{item.icon}</span>
@@ -389,7 +473,7 @@ const JobsView = () => {
               <div className="mb-6">
                 <h4 className="text-sm font-semibold text-white mb-3">Required Skills</h4>
                 <div className="flex flex-wrap gap-2">
-                  {selectedJob.tags.map(skill => (
+                  {(selectedJob.tags||[]).map(skill => (
                     <span key={skill} className="px-3 py-1.5 bg-gray-800/60 text-gray-300 text-xs rounded-lg border border-gray-700/50">
                       {skill}
                     </span>

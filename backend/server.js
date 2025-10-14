@@ -5,6 +5,9 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { v4: uuidv4 } = require('uuid');
+const { connectDB } = require('./config/db');
+const InterviewSession = require('./models/InterviewSession');
+const authMiddleware = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,17 +19,29 @@ const io = socketIo(server, {
 });
 
 // Middleware
+// Support multiple origins (comma separated) for dev convenience
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173").split(/[,;\s]+/).filter(Boolean);
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:5173"
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // allow non-browser or same-origin
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn('CORS blocked origin:', origin, 'Allowed:', allowedOrigins);
+    return callback(new Error('Not allowed by CORS'));
+  }
 }));
 app.use(express.json());
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Initialize Gemini AI (optional if key provided)
+let model = null;
+if (process.env.GEMINI_API_KEY) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+} else {
+  console.warn('GEMINI_API_KEY not provided. AI interview responses will be stubbed.');
+}
 
 // In-memory storage for interview sessions (use database in production)
-const interviewSessions = new Map();
+const interviewSessions = new Map(); // in-memory cache; persisted to Mongo
 
 // Interview memory system
 class InterviewMemory {
@@ -183,9 +198,15 @@ ${memory.questionCount === 0 ?
 
 Remember to keep responses concise (2-3 sentences) and always end with a clear question.`;
 
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
+      let text = 'AI model not configured.';
+      if (model) {
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        text = response.text();
+      } else {
+        // fallback simple echo style
+        text = `Thanks for sharing. (stub) You said: ${userMessage}. Could you elaborate further?`;
+      }
 
       // Update interview phase and extract topics
       this.updateInterviewPhase(memory, userMessage, text);
@@ -247,16 +268,16 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Start new interview session
-  socket.on('start-interview', (userProfile) => {
+  socket.on('start-interview', async (userProfile) => {
     const sessionId = uuidv4();
-    const memory = new InterviewMemory();
+  const memory = new InterviewMemory();
     
     // Set user profile if provided
     if (userProfile) {
       memory.setUserProfile(userProfile);
     }
     
-    interviewSessions.set(sessionId, memory);
+  interviewSessions.set(sessionId, memory);
     
     socket.join(sessionId);
     socket.sessionId = sessionId;
@@ -277,6 +298,22 @@ io.on('connection', (socket) => {
       sessionId: sessionId,
       phase: memory.interviewPhase
     });
+
+    // Persist session
+    try {
+      await InterviewSession.create({
+        sessionId,
+        user: socket.user?._id,
+        userProfile,
+        interviewPhase: memory.interviewPhase,
+        topics: memory.topics,
+        questionCount: memory.questionCount,
+        difficulty: memory.difficulty,
+        messages: memory.getContext()
+      });
+    } catch (e) {
+      console.error('Persist session error', e.message);
+    }
     
     console.log(`Interview started for session ${sessionId} with profile:`, userProfile);
   });
@@ -304,6 +341,19 @@ io.on('connection', (socket) => {
         sessionId: sessionId || socket.sessionId,
         phase: memory.interviewPhase
       });
+
+      // Update DB
+      try {
+        await InterviewSession.findOneAndUpdate({ sessionId: sessionId || socket.sessionId }, {
+          interviewPhase: memory.interviewPhase,
+          topics: memory.topics,
+          questionCount: memory.questionCount,
+          difficulty: memory.difficulty,
+          messages: memory.getContext()
+        });
+      } catch (e) {
+        console.error('Update session error', e.message);
+      }
     } catch (error) {
       console.error('Error processing message:', error);
       socket.emit('error', { message: 'Error processing your message' });
@@ -334,35 +384,12 @@ io.on('connection', (socket) => {
   });
 });
 
-// --- The Login API Endpoint (keeping original functionality) ---
-app.post('/api/login', (req, res) => {
-  // Extract username and password from the incoming request
-  const { username, password } = req.body;
-
-  console.log(`Received login attempt for user: ${username}`);
-
-  // --- IMPORTANT DATABASE LOGIC (SIMULATED) ---
-  // In a real application, you would look up the user in a database (like MongoDB or PostgreSQL)
-  // and securely compare the hashed password.
-  // For this example, we'll use simple hardcoded values.
-  
-  if (username === 'admin' && password === 'password123') {
-    // If credentials are correct, send back a success response
-    console.log('Login successful!');
-    res.json({
-      success: true,
-      message: 'Login successful!',
-      token: 'fake-jwt-token-for-secure-sessions' // In a real app, you'd generate a real JWT
-    });
-  } else {
-    // If credentials are incorrect, send back a failure response
-    console.log('Login failed: Invalid credentials.');
-    res.status(401).json({ // 401 Unauthorized is the correct status code
-      success: false,
-      message: 'Invalid username or password.'
-    });
-  }
-});
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/jobs', require('./routes/jobs'));
+app.use('/api/applications', require('./routes/applications'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/users', require('./routes/user'));
 
 // REST API endpoints
 app.get('/api/health', (req, res) => {
@@ -385,9 +412,13 @@ app.get('/api/session/:sessionId', (req, res) => {
   });
 });
 
+// Connect DB then start server
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`AI Interview Server running on port ${PORT}`);
-  console.log(`CORS enabled for: ${process.env.CORS_ORIGIN || "http://localhost:5173"}`);
+connectDB(process.env.MONGO_URI).then(() => {
+  server.listen(PORT, () => {
+    console.log(`AI Interview Server running on port ${PORT}`);
+    console.log(`CORS enabled for origins: ${allowedOrigins.join(', ')}`);
+  });
 });
+
 

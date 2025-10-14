@@ -1,28 +1,84 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../services/api';
 
-const LoginPage = ({ onLogin }) => {
+const SignupPage = ({ onSignup }) => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [userType, setUserType] = useState('student');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: 'student'
+  });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Backend login
+  // Set role from URL parameter
+  useEffect(() => {
+    const roleParam = searchParams.get('role');
+    if (roleParam && (roleParam === 'student' || roleParam === 'recruiter')) {
+      setFormData(prev => ({ ...prev, role: roleParam }));
+    }
+  }, [searchParams]);
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setIsLoading(true);
 
+    // Basic validation
+    if (!formData.username.trim() || !formData.email.trim() || !formData.password.trim()) {
+      setError('All fields are required.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const data = await api.login({ username, password });
+      console.log('Attempting registration with:', {
+        username: formData.username,
+        email: formData.email,
+        role: formData.role
+      });
+      
+      const data = await api.register({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role
+      });
+      
+      console.log('Registration successful:', data);
       localStorage.setItem('token', data.token);
-      onLogin(data.user);
+      onSignup(data.user);
+      // Let App.jsx handle routing based on user role
+      navigate('/');
     } catch (e) {
-      setError('Invalid credentials');
+      console.error('Registration error:', e);
+      const errorMsg = e.message.includes('409') ? 'Username or email already exists' : 
+                      e.message.includes('400') ? 'Invalid input data' : 
+                      `Registration failed: ${e.message}`;
+      setError(errorMsg);
     }
     setIsLoading(false);
   };
@@ -57,45 +113,45 @@ const LoginPage = ({ onLogin }) => {
               </div>
               
               <h2 className="text-4xl lg:text-5xl font-bold text-white mb-6 leading-tight">
-                Your Career Journey Starts Here
+                Join Our Community Today
               </h2>
               
               <p className="text-gray-400 text-lg mb-8 leading-relaxed">
-                Connect with top companies, practice with AI-powered interviews, and land your dream job with our comprehensive job portal.
+                Create your account and start your journey with AI-powered interviews, smart job matching, and personalized career guidance.
               </p>
               
               <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  <span>AI Interview Practice</span>
+                  <span>Free Account Setup</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-teal-400 rounded-full"></div>
-                  <span>Smart Job Matching</span>
+                  <span>Instant Access</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  <span>Real-time Feedback</span>
+                  <span>AI Interview Practice</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Right Panel - Login Form */}
+          {/* Right Panel - Signup Form */}
           <div className="lg:w-3/5 p-8 lg:p-12 flex flex-col justify-center">
             <div className="max-w-md mx-auto w-full">
               <div className="text-center mb-8">
-                <h3 className="text-2xl font-bold text-white mb-2">Welcome Back</h3>
-                <p className="text-gray-400">Sign in to continue your journey</p>
+                <h3 className="text-2xl font-bold text-white mb-2">Create Account</h3>
+                <p className="text-gray-400">Join thousands of professionals advancing their careers</p>
               </div>
 
               {/* User Type Selector */}
               <div className="flex gap-2 mb-6 p-1 bg-gray-800/50 rounded-xl">
                 <button
                   type="button"
-                  onClick={() => setUserType('student')}
+                  onClick={() => setFormData({...formData, role: 'student'})}
                   className={`flex-1 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-300 ${
-                    userType === 'student'
+                    formData.role === 'student'
                       ? 'bg-gradient-to-r from-green-400 to-teal-400 text-black shadow-lg shadow-green-400/25'
                       : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
                   }`}
@@ -109,9 +165,9 @@ const LoginPage = ({ onLogin }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setUserType('recruiter')}
+                  onClick={() => setFormData({...formData, role: 'recruiter'})}
                   className={`flex-1 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-300 ${
-                    userType === 'recruiter'
+                    formData.role === 'recruiter'
                       ? 'bg-gradient-to-r from-green-400 to-teal-400 text-black shadow-lg shadow-green-400/25'
                       : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
                   }`}
@@ -135,9 +191,27 @@ const LoginPage = ({ onLogin }) => {
                     </div>
                     <input
                       type="text"
-                      placeholder="Enter your username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      name="username"
+                      placeholder="Choose a username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 transition-all duration-300 backdrop-blur-sm"
+                      required
+                    />
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                      </svg>
+                    </div>
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="Enter your email address"
+                      value={formData.email}
+                      onChange={handleChange}
                       className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 transition-all duration-300 backdrop-blur-sm"
                       required
                     />
@@ -151,28 +225,31 @@ const LoginPage = ({ onLogin }) => {
                     </div>
                     <input
                       type="password"
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      name="password"
+                      placeholder="Create a strong password"
+                      value={formData.password}
+                      onChange={handleChange}
                       className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 transition-all duration-300 backdrop-blur-sm"
                       required
                     />
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-gray-400 text-sm cursor-pointer">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1M10 17L6 13L7.41 11.59L10 14.17L16.59 7.58L18 9L10 17Z"/>
+                      </svg>
+                    </div>
                     <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 text-green-400 bg-gray-800 border-gray-600 rounded focus:ring-green-400 focus:ring-2"
+                      type="password"
+                      name="confirmPassword"
+                      placeholder="Confirm your password"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 transition-all duration-300 backdrop-blur-sm"
+                      required
                     />
-                    Remember me
-                  </label>
-                  <button type="button" className="text-green-400 text-sm hover:text-green-300 transition-colors">
-                    Forgot password?
-                  </button>
+                  </div>
                 </div>
 
                 <button
@@ -183,10 +260,10 @@ const LoginPage = ({ onLogin }) => {
                   {isLoading ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>
-                      Signing in...
+                      Creating Account...
                     </div>
                   ) : (
-                    'Sign In'
+                    'Create Account'
                   )}
                 </button>
 
@@ -201,26 +278,17 @@ const LoginPage = ({ onLogin }) => {
                     <div className="w-full border-t border-gray-700"></div>
                   </div>
                   <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-black text-gray-500">Don't have an account?</span>
+                    <span className="px-4 bg-black text-gray-500">Already have an account?</span>
                   </div>
                 </div>
 
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/signup?role=student')}
-                    className="flex-1 py-3 px-4 border border-gray-700 text-gray-300 rounded-xl hover:bg-gray-800/50 hover:border-gray-600 transition-all duration-300 text-sm font-medium"
-                  >
-                    Create Student Account
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/signup?role=recruiter')}
-                    className="flex-1 py-3 px-4 border border-gray-700 text-gray-300 rounded-xl hover:bg-gray-800/50 hover:border-gray-600 transition-all duration-300 text-sm font-medium"
-                  >
-                    Create Recruiter Account
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="w-full py-3 px-4 border border-gray-700 text-gray-300 rounded-xl hover:bg-gray-800/50 hover:border-gray-600 transition-all duration-300 text-sm font-medium"
+                >
+                  Sign In Instead
+                </button>
               </form>
             </div>
           </div>
@@ -230,5 +298,4 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
-export default LoginPage;
-
+export default SignupPage;
