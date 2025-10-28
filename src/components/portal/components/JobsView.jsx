@@ -40,19 +40,45 @@ const JobsView = () => {
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
+    setError('');
+
     (async () => {
       try {
-        const data = await api.listJobs({ q: query, category, type: jobType, remote: filters.remote, urgent: filters.urgent, verified: filters.verified });
+        const trimmedQuery = query.trim();
+        const params = {
+          q: trimmedQuery ? trimmedQuery : undefined,
+          category: category !== 'All' ? category : undefined,
+          type: jobType !== 'All' ? jobType : undefined,
+          remote: filters.remote ? 'true' : undefined,
+          urgent: filters.urgent ? 'true' : undefined,
+          verified: filters.verified ? 'true' : undefined,
+        };
+
+        const data = await api.listJobs(params);
         if (mounted) {
-          setJobs(data.items);
+          const rawJobs = data.items || [];
+          const normalisedJobs = rawJobs.map((job) => ({
+            ...job,
+            postedBy: job.postedBy || job.owner || null,
+          }));
+          setJobs(normalisedJobs);
         }
       } catch (e) {
-        setError('Failed to load jobs');
+        console.error('Failed to load jobs', e);
+        if (mounted) {
+          setError('Failed to load jobs');
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     })();
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+    };
   }, [query, category, jobType, filters]);
 
   // Fetch user's applications
@@ -60,7 +86,8 @@ const JobsView = () => {
     const fetchMyApplications = async () => {
       try {
         const applications = await api.getMyApplications();
-        setMyApplications(applications);
+        const cleanedApplications = (applications || []).filter((app) => app && app.job && app.job._id);
+        setMyApplications(cleanedApplications);
       } catch (error) {
         console.error('Failed to fetch applications:', error);
       }
@@ -92,10 +119,11 @@ const JobsView = () => {
     const jobId = job._id;
     setApplying(prev => new Set(prev).add(jobId));
     try {
-      const application = await api.applyForJob(jobId);
+  const application = await api.applyForJob(jobId);
       // Refresh applications
       const applications = await api.getMyApplications();
-      setMyApplications(applications);
+  const cleanedApplications = (applications || []).filter((app) => app && app.job && app.job._id);
+  setMyApplications(cleanedApplications);
       navigateToInterview(job, application);
     } catch (error) {
       console.error('Failed to apply:', error);
@@ -374,11 +402,11 @@ const JobsView = () => {
                 <div className="flex items-center justify-between pt-4 border-t border-gray-800/50">
                   <div className="flex gap-3">
                     {(() => {
-                      const hasApplied = myApplications.some(app => app.job._id === job._id);
+                      const hasApplied = myApplications.some(app => app.job && app.job._id === job._id);
                       const isApplying = applying.has(job._id);
                       
                       if (hasApplied) {
-                        const application = myApplications.find(app => app.job._id === job._id);
+                        const application = myApplications.find(app => app.job && app.job._id === job._id);
                         return (
                           <div className="flex items-center gap-2">
                             <button 

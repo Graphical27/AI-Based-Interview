@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { getUserModel } = require('../models/RoleUser');
 
-async function auth(req, res, next) {
+async function extractUserFromRequest(req) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing Authorization header' });
+    return null;
   }
   const token = header.split(' ')[1];
   try {
@@ -18,16 +18,35 @@ async function auth(req, res, next) {
 
     // Get role-specific User model
     const User = getUserModel(role);
-    req.user = await User.findById(decoded.id).select('-passwordHash');
-    
-    if (!req.user) {
-      return res.status(401).json({ error: 'User not found' });
+    const userDoc = await User.findById(decoded.id).select('-passwordHash');
+
+    if (!userDoc) {
+      return null;
     }
-    
-    next();
+
+    userDoc.role = role;
+    return userDoc;
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return null;
   }
 }
 
+async function auth(req, res, next) {
+  const user = await extractUserFromRequest(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  req.user = user;
+  return next();
+}
+
+async function optionalAuth(req, _res, next) {
+  const user = await extractUserFromRequest(req);
+  if (user) {
+    req.user = user;
+  }
+  next();
+}
+
 module.exports = auth;
+module.exports.optionalAuth = optionalAuth;

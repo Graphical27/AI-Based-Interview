@@ -47,7 +47,17 @@ export const api = {
   login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   dashboardSummary: () => request('/dashboard/summary'),
   listJobs: (params = {}) => {
-    const qs = new URLSearchParams(params).toString();
+    const cleanedEntries = Object.entries(params).filter(([_, value]) => {
+      if (value === undefined || value === null) {
+        return false;
+      }
+      if (typeof value === 'string' && value.trim() === '') {
+        return false;
+      }
+      return true;
+    });
+
+    const qs = new URLSearchParams(cleanedEntries).toString();
     return request(`/jobs${qs ? `?${qs}` : ''}`);
   },
   getJob: (id) => request(`/jobs/${id}`),

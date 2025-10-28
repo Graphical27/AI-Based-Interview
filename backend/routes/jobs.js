@@ -1,11 +1,12 @@
 const express = require('express');
 const { getJobModel } = require('../models/RoleModels');
 const auth = require('../middleware/auth');
+const optionalAuth = auth.optionalAuth;
 
 const router = express.Router();
 
 // List jobs with filters - Students see jobs from recruiter database
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const { q, category, type, remote, urgent, verified, page = 1, pageSize = 50 } = req.query;
     
@@ -26,6 +27,10 @@ router.get('/', async (req, res) => {
     if (remote === 'true') filter.remote = true;
     if (urgent === 'true') filter.urgent = true;
     if (verified === 'true') filter.verified = true;
+
+    if (req.user && req.user.role === 'recruiter') {
+      filter.postedBy = req.user._id;
+    }
 
     const skip = (Number(page) - 1) * Number(pageSize);
     const [items, total] = await Promise.all([
