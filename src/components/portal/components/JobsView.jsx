@@ -68,11 +68,22 @@ const JobsView = () => {
     fetchMyApplications();
   }, []);
 
-  const navigateToInterview = (job) => {
+  const applicationByJobId = useMemo(() => {
+    const lookup = new Map();
+    myApplications.forEach((app) => {
+      if (app.job?._id) {
+        lookup.set(app.job._id, app);
+      }
+    });
+    return lookup;
+  }, [myApplications]);
+
+  const navigateToInterview = (job, application) => {
     navigate('/interview', {
       state: {
         job,
         durationMinutes: resolveInterviewDuration(job),
+        applicationId: application?._id || applicationByJobId.get(job._id)?._id,
       }
     });
   };
@@ -81,11 +92,11 @@ const JobsView = () => {
     const jobId = job._id;
     setApplying(prev => new Set(prev).add(jobId));
     try {
-      await api.applyForJob(jobId);
+      const application = await api.applyForJob(jobId);
       // Refresh applications
       const applications = await api.getMyApplications();
       setMyApplications(applications);
-      navigateToInterview(job);
+      navigateToInterview(job, application);
     } catch (error) {
       console.error('Failed to apply:', error);
       const alreadyApplied = error.status === 400 && /already applied/i.test(error.message || '');
@@ -369,12 +380,20 @@ const JobsView = () => {
                       if (hasApplied) {
                         const application = myApplications.find(app => app.job._id === job._id);
                         return (
-                          <button 
-                            disabled
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-400/20 text-blue-400 border border-blue-400/30 font-semibold rounded-lg text-sm"
-                          >
-                            ✓ Applied ({application.status})
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={(e) => {e.stopPropagation(); navigateToInterview(job, application);}}
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-400/20 text-blue-400 border border-blue-400/30 font-semibold rounded-lg text-sm hover:bg-blue-400/30"
+                            >
+                              Practice Again
+                            </button>
+                            <div className="px-3 py-2 text-xs text-gray-400 border border-gray-700 rounded-lg">
+                              Status: {application.status}
+                              {typeof application.interviewScore === 'number' && (
+                                <span className="ml-2 text-blue-300">Score: {application.interviewScore.toFixed(1)}/10</span>
+                              )}
+                            </div>
+                          </div>
                         );
                       }
                       

@@ -5,6 +5,7 @@ import SignupPage from './components/LoginPage/SignupPage.jsx';
 import PortalLayout from './components/portal/PortalLayout.jsx';
 import RecruiterPage from './components/RecruiterPage/RecruiterPage.jsx';
 import InterviewPage from './components/InterviewPage/InterviewPage.jsx';
+import InterviewResultPage from './components/InterviewPage/InterviewResultPage.jsx';
 import { api } from './services/api.js';
 
 function App() {
@@ -104,6 +105,14 @@ function App() {
                 <InterviewPage /> : 
                 <Navigate to="/" replace />
             } 
+          />
+          <Route
+            path="/interview/results"
+            element={
+              isAuthenticated ?
+                <InterviewResultPage /> :
+                <Navigate to="/" replace />
+            }
           />
         </Routes>
       </div>

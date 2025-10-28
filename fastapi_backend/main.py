@@ -121,6 +121,30 @@ class MessageResponse(BaseModel):
     done: bool = False
 
 
+class FinalizeInterviewRequest(BaseModel):
+    session_id: str = Field(..., alias="sessionId")
+    completion_reason: Optional[str] = Field(default=None, alias="completionReason")
+    duration_seconds: Optional[int] = Field(default=None, alias="durationSeconds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FinalizeInterviewResponse(BaseModel):
+    sessionId: str
+    role: Optional[str] = ""
+    company: Optional[str] = ""
+    score: float
+    summary: str
+    strengths: List[str]
+    improvements: List[str]
+    completionReason: str
+    durationSeconds: int
+    totalQuestions: int
+    totalResponses: int
+    skillsCovered: List[str] = Field(default_factory=list)
+    requirementsSummary: str = ""
+
+
 def _compose_requirements(profile: CandidateProfile, skills: List[str]) -> str:
     fragments: List[str] = []
     if profile.role:
@@ -156,6 +180,7 @@ class InterviewSession:
         self.behavioral_key = profile.industry.lower() if profile.industry else ""
         self.complete = False
         self.plan = self._build_plan()
+        self.started_at = datetime.utcnow()
 
     def _build_plan(self) -> List[Tuple[str, Callable[[Optional[str]], str]]]:
         plan: List[Tuple[str, Callable[[Optional[str]], str]]] = []
@@ -208,6 +233,88 @@ class InterviewSession:
             self.complete = True
 
         return message, phase, self.complete
+
+    # Evaluation helpers -------------------------------------------------
+
+    def _count_turns(self) -> Tuple[int, int]:
+        user_turns = [entry for entry in self.history if entry["role"] == "user"]
+        ai_turns = [entry for entry in self.history if entry["role"] == "ai"]
+        return len(ai_turns), len(user_turns)
+
+    def _average_response_length(self) -> float:
+        user_turns = [entry for entry in self.history if entry["role"] == "user"]
+        if not user_turns:
+            return 0.0
+        total_chars = sum(len(turn["message"]) for turn in user_turns)
+        return total_chars / len(user_turns)
+
+    def _coverage_ratio(self) -> float:
+        if not self.plan:
+            return 0.0
+        covered_phases = {entry["phase"] for entry in self.history if entry["role"] == "ai" and entry.get("phase")}
+        return min(1.0, len(covered_phases) / len(self.plan))
+
+    def generate_evaluation(self, completion_reason: Optional[str], duration_seconds: Optional[int]) -> Dict[str, object]:
+        total_questions, total_responses = self._count_turns()
+        avg_length = self._average_response_length()
+        coverage = self._coverage_ratio()
+
+        # Scoring heuristics: participation, depth, coverage
+        participation_score = min(1.0, total_responses / max(4, len(self.plan)))
+        depth_score = min(1.0, avg_length / 240.0)
+        coverage_score = coverage
+
+        raw_score = 4.0 + (participation_score * 3.5) + (depth_score * 1.5) + (coverage_score * 1.0)
+        score = max(1.0, min(10.0, round(raw_score, 1)))
+
+        strengths: List[str] = []
+        improvements: List[str] = []
+
+        if total_responses >= 4:
+            strengths.append("Consistently responded to the interviewer prompts.")
+        if avg_length >= 140:
+            strengths.append("Provided detailed, narrative-style answers with strong context.")
+        elif avg_length >= 90:
+            strengths.append("Demonstrated concise explanations with relevant examples.")
+
+        if coverage >= 0.8:
+            strengths.append("Covered most of the planned interview topics.")
+
+        if total_responses <= 2:
+            improvements.append("Increase the number of follow-up details to show fuller ownership of outcomes.")
+        if avg_length < 80:
+            improvements.append("Expand answers with specifics—mention stakeholders, metrics, or tools used.")
+        if coverage < 0.6:
+            improvements.append("Aim to progress through more of the interview agenda by keeping answers focused.")
+
+        if not improvements:
+            improvements.append("Consider closing answers with explicit results or key takeaways to reinforce impact.")
+
+        summary_parts = [
+            f"You answered {total_responses} of {max(total_questions, total_responses)} prompts",
+            f"covering about {int(coverage * 100)}% of the planned topics",
+        ]
+        if avg_length:
+            summary_parts.append(f"with an average answer length of {int(avg_length)} characters")
+        summary = " ".join(summary_parts) + "."
+
+        computed_duration = duration_seconds or int(max((datetime.utcnow() - self.started_at).total_seconds(), 0))
+
+        return {
+            "sessionId": self.session_id,
+            "role": self.profile.role or "",
+            "company": self.profile.company or "",
+            "score": score,
+            "summary": summary,
+            "strengths": strengths,
+            "improvements": improvements,
+            "completionReason": completion_reason or "unknown",
+            "durationSeconds": computed_duration,
+            "totalQuestions": total_questions,
+            "totalResponses": total_responses,
+            "skillsCovered": self.skills,
+            "requirementsSummary": self.requirements_summary,
+        }
 
     # Question builders -------------------------------------------------
 
@@ -346,6 +453,18 @@ def end_interview(session_id: str) -> Dict[str, str]:
     if session_id in _sessions:
         del _sessions[session_id]
     return {"status": "ended", "sessionId": session_id}
+
+
+@app.post("/api/interview/finalize", response_model=FinalizeInterviewResponse)
+def finalize_interview(payload: FinalizeInterviewRequest) -> FinalizeInterviewResponse:
+    session = _sessions.get(payload.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    evaluation = session.generate_evaluation(payload.completion_reason, payload.duration_seconds)
+    del _sessions[payload.session_id]
+
+    return FinalizeInterviewResponse(**evaluation)
 
 
 if __name__ == "__main__":  # pragma: no cover

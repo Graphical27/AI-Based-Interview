@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getApplicationModel, getJobModel } = require('../models/RoleModels');
+const { getApplicationModel, getJobModel, getInterviewResultModel } = require('../models/RoleModels');
 const authMiddleware = require('../middleware/auth');
 
 // Apply for a job (students apply)
@@ -89,7 +89,15 @@ router.get('/job/:jobId', authMiddleware, async (req, res) => {
           job: { _id: job._id, title: job.title, company: job.company },
           status: app.status,
           createdAt: app.createdAt,
-          notes: app.notes
+          notes: app.notes,
+          interviewScore: app.interviewScore,
+          interviewSummary: app.interviewSummary,
+          interviewCompletedAt: app.interviewCompletedAt,
+          interviewDurationSeconds: app.interviewDurationSeconds,
+          interviewHighlights: app.interviewHighlights,
+          interviewImprovements: app.interviewImprovements,
+          interviewSkillsCovered: app.interviewSkillsCovered,
+          interviewRequirementsSummary: app.interviewRequirementsSummary,
         };
       })
     );
@@ -122,7 +130,15 @@ router.get('/my-applications', authMiddleware, async (req, res) => {
           job: job,
           status: app.status,
           createdAt: app.createdAt,
-          notes: app.notes
+          notes: app.notes,
+          interviewScore: app.interviewScore,
+          interviewSummary: app.interviewSummary,
+          interviewCompletedAt: app.interviewCompletedAt,
+          interviewDurationSeconds: app.interviewDurationSeconds,
+          interviewHighlights: app.interviewHighlights,
+          interviewImprovements: app.interviewImprovements,
+          interviewSkillsCovered: app.interviewSkillsCovered,
+          interviewRequirementsSummary: app.interviewRequirementsSummary,
         };
       })
     );
@@ -181,13 +197,125 @@ router.put('/:applicationId/status', authMiddleware, async (req, res) => {
       job: { _id: job._id, title: job.title, company: job.company },
       status: application.status,
       createdAt: application.createdAt,
-      notes: application.notes
+      notes: application.notes,
+      interviewScore: application.interviewScore,
+      interviewSummary: application.interviewSummary,
+      interviewCompletedAt: application.interviewCompletedAt,
     };
 
     res.json(updatedApplication);
   } catch (error) {
     console.error('Update application status error:', error);
     res.status(500).json({ error: 'Failed to update application status' });
+  }
+});
+
+// Save interview result (students submit their AI evaluation)
+router.post('/:applicationId/interview-results', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'student') {
+    return res.status(403).json({ error: 'Only students can submit interview results' });
+  }
+
+  try {
+    const { applicationId } = req.params;
+    const {
+      score,
+      summary,
+      strengths = [],
+      improvements = [],
+      completionReason = 'unknown',
+      durationSeconds = 0,
+      totalQuestions = 0,
+      totalResponses = 0,
+      skillsCovered = [],
+      requirementsSummary = '',
+    } = req.body;
+
+    const Application = getApplicationModel('student');
+    const Job = getJobModel('recruiter');
+    const InterviewResult = getInterviewResultModel('student');
+    const { getUserModel } = require('../models/RoleUser');
+    const StudentUser = getUserModel('student');
+
+    const application = await Application.findOne({ _id: applicationId, user: req.user.id });
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    const job = await Job.findById(application.job);
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const student = await StudentUser.findById(req.user.id).select('username email');
+
+    application.interviewScore = score;
+    application.interviewSummary = summary;
+    application.interviewCompletedAt = new Date();
+    application.interviewDurationSeconds = durationSeconds;
+    application.interviewHighlights = strengths;
+    application.interviewImprovements = improvements;
+  application.interviewSkillsCovered = skillsCovered;
+  application.interviewRequirementsSummary = requirementsSummary;
+    await application.save();
+
+    const resultPayload = {
+      user: req.user.id,
+      application: application._id,
+      job: job._id,
+      jobSnapshot: {
+        jobId: job._id,
+        title: job.title,
+        company: job.company,
+        type: job.type,
+        experience: job.experience,
+      },
+      userSnapshot: {
+        userId: student?._id,
+        username: student?.username,
+        email: student?.email,
+      },
+      score,
+      durationSeconds,
+      totalQuestions,
+      totalResponses,
+      completionReason,
+      summary,
+      strengths,
+      improvements,
+      skillsCovered,
+      requirementsSummary,
+    };
+
+    const existingResult = await InterviewResult.findOne({ application: application._id });
+    let interviewResultDoc;
+    if (existingResult) {
+      Object.assign(existingResult, resultPayload);
+      interviewResultDoc = await existingResult.save();
+    } else {
+      interviewResultDoc = await InterviewResult.create(resultPayload);
+    }
+
+    res.json({
+      application: {
+        _id: application._id,
+        job: { _id: job._id, title: job.title, company: job.company },
+        status: application.status,
+        interviewScore: application.interviewScore,
+        interviewSummary: application.interviewSummary,
+        interviewCompletedAt: application.interviewCompletedAt,
+        interviewHighlights: application.interviewHighlights,
+        interviewImprovements: application.interviewImprovements,
+        completionReason,
+        durationSeconds,
+        skillsCovered,
+        requirementsSummary,
+      },
+      result: interviewResultDoc,
+    });
+  } catch (error) {
+    console.error('Failed to store interview results:', error);
+    res.status(500).json({ error: 'Failed to store interview results' });
   }
 });
 

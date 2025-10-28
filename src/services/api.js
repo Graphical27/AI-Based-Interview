@@ -59,6 +59,7 @@ export const api = {
   getJobApplications: (jobId) => request(`/applications/job/${jobId}`),
   getMyApplications: () => request('/applications/my-applications'),
   updateApplicationStatus: (applicationId, status) => request(`/applications/${applicationId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  saveInterviewResult: (applicationId, payload) => request(`/applications/${applicationId}/interview-results`, { method: 'POST', body: JSON.stringify(payload) }),
   
   saveJob: (jobId) => request(`/users/saved-jobs/${jobId}`, { method: 'POST' }),
   unsaveJob: (jobId) => request(`/users/saved-jobs/${jobId}`, { method: 'DELETE' }),

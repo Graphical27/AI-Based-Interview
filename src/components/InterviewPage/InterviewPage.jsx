@@ -5,33 +5,89 @@ import VoiceRecorder from './VoiceRecorder';
 import ChatInterface from './ChatInterface';
 import TypingAnimation from './TypingAnimation';
 import PreInterviewSetup from './PreInterviewSetup';
-import { startInterviewSession, sendInterviewMessage, endInterviewSession } from '../../services/interviewApi';
+import { startInterviewSession, sendInterviewMessage, endInterviewSession, finalizeInterviewSession } from '../../services/interviewApi';
+import { api } from '../../services/api';
 import './InterviewPage.css';
 
-const inferExperienceLevel = (job) => {
-  const text = `${job?.title || ''} ${job?.description || ''}`.toLowerCase();
-  const rules = [
-    { level: 'lead', patterns: ['lead', 'principal', 'architect', 'head of'] },
-    { level: 'senior', patterns: ['senior', 'sr.', 'staff', 'expert'] },
-    { level: 'mid', patterns: ['mid', 'intermediate', '3+', '4+', '5+'] },
-    { level: 'junior', patterns: ['junior', 'jr.', 'entry', 'graduate', '1-2', '0-2'] },
-    { level: 'fresher', patterns: ['fresher', 'intern', 'trainee'] },
-  ];
+const EXPERIENCE_LEVEL_RULES = [
+  { key: 'lead', patterns: ['lead', 'principal', 'architect', 'head of'] },
+  { key: 'senior', patterns: ['senior', 'sr.', 'staff', 'expert', 'manager'] },
+  { key: 'mid', patterns: ['mid', 'mid-level', 'intermediate', 'iii', '3+', '4+', '5+'] },
+  { key: 'junior', patterns: ['junior', 'jr.', 'associate', '1-2', '0-2'] },
+  { key: 'fresher', patterns: ['entry', 'entry-level', 'fresher', 'intern', 'trainee', 'graduate'] },
+];
 
-  for (const rule of rules) {
-    if (rule.patterns.some(keyword => text.includes(keyword))) {
-      return rule.level;
+const normaliseExperienceKey = (value) => {
+  const text = (value || '').toString().trim().toLowerCase();
+  if (!text) {
+    return '';
+  }
+
+  for (const rule of EXPERIENCE_LEVEL_RULES) {
+    if (rule.patterns.some((pattern) => text.includes(pattern))) {
+      return rule.key;
+    }
+  }
+
+  return '';
+};
+
+const inferExperienceLevel = (job) => {
+  if (!job) {
+    return 'mid';
+  }
+
+  const explicit = normaliseExperienceKey(job.experience);
+  if (explicit) {
+    return explicit;
+  }
+
+  const aggregatedText = [
+    job.title,
+    job.description,
+    Array.isArray(job.tags) ? job.tags.join(' ') : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (aggregatedText) {
+    for (const rule of EXPERIENCE_LEVEL_RULES) {
+      if (rule.patterns.some((pattern) => aggregatedText.includes(pattern))) {
+        return rule.key;
+      }
     }
   }
 
   return 'mid';
 };
 
+const withTimeout = (promise, timeoutMs, timeoutMessage) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(timeoutMessage || 'Request timed out.'));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+};
+
 const InterviewPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const jobContext = location.state?.job || null;
+  const applicationId = location.state?.applicationId || null;
   const defaultDurationMinutes = Number(location.state?.durationMinutes) || Number(jobContext?.interviewDurationMinutes) || Number(jobContext?.durationMinutes) || 20;
+  const experienceKey = useMemo(() => inferExperienceLevel(jobContext), [jobContext]);
+
   const profileDefaults = useMemo(() => {
     if (location.state?.profileDefaults) {
       return location.state.profileDefaults;
@@ -46,9 +102,9 @@ const InterviewPage = () => {
       skills: tags.join(', '),
       focus: jobContext.category || '',
       industry: jobContext.industry || jobContext.category || '',
-      experience: inferExperienceLevel(jobContext),
+      experience: experienceKey,
     };
-  }, [jobContext, location.state?.profileDefaults]);
+  }, [experienceKey, jobContext, location.state?.profileDefaults]);
 
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState([]);
@@ -65,10 +121,15 @@ const InterviewPage = () => {
   const [remainingSeconds, setRemainingSeconds] = useState(defaultDurationMinutes * 60);
   const [timerActive, setTimerActive] = useState(false);
   const [completionReason, setCompletionReason] = useState('');
+  const [finalizationStatus, setFinalizationStatus] = useState('idle');
+  const [finalizationError, setFinalizationError] = useState('');
+  const [isFinalizing, setIsFinalizing] = useState(false);
   
   const messagesEndRef = useRef(null);
   const timerNotifiedRef = useRef(false);
   const sessionTerminationRef = useRef(false);
+  const finalizationGuardRef = useRef('idle');
+  const interviewStartTimestampRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -192,8 +253,13 @@ const InterviewPage = () => {
     setIsInterviewComplete(false);
     setRemainingSeconds(defaultDurationMinutes * 60);
     setCompletionReason('');
+    setFinalizationStatus('idle');
+    setFinalizationError('');
+    setIsFinalizing(false);
     timerNotifiedRef.current = false;
     sessionTerminationRef.current = false;
+    finalizationGuardRef.current = 'idle';
+    interviewStartTimestampRef.current = null;
 
     try {
       const response = await startInterviewSession(profileData);
@@ -211,6 +277,7 @@ const InterviewPage = () => {
       setInterviewStarted(true);
       setIsInterviewComplete(Boolean(response.done));
       setTimerActive(true);
+      interviewStartTimestampRef.current = Date.now();
 
       if (isSpeechEnabled) {
         speakText(response.message);
@@ -317,7 +384,117 @@ const InterviewPage = () => {
   }, [isInterviewComplete]);
 
   useEffect(() => {
+    if (!isInterviewComplete || !sessionId) {
+      return;
+    }
+
+    const reason = completionReason || 'agent-complete';
+
+    if (finalizationGuardRef.current === 'pending' || finalizationGuardRef.current === 'succeeded') {
+      return;
+    }
+
+    if (finalizationStatus !== 'idle') {
+      return;
+    }
+
+    finalizationGuardRef.current = 'pending';
+    setFinalizationStatus('pending');
+    setFinalizationError('');
+    setIsFinalizing(true);
+
+    const elapsedSeconds = interviewStartTimestampRef.current
+      ? Math.max(0, Math.round((Date.now() - interviewStartTimestampRef.current) / 1000))
+      : Math.max(0, (defaultDurationMinutes * 60) - remainingSeconds);
+
+    let isMounted = true;
+
+    const runFinalization = async () => {
+      try {
+        const evaluation = await withTimeout(
+          finalizeInterviewSession(sessionId, {
+            completionReason: reason,
+            durationSeconds: elapsedSeconds,
+          }),
+          15000,
+          'The AI feedback is taking longer than expected. Please try again.'
+        );
+
+        let persistenceErrorMessage = '';
+        if (applicationId) {
+          try {
+            await withTimeout(
+              api.saveInterviewResult(applicationId, {
+                score: evaluation.score,
+                summary: evaluation.summary,
+                strengths: evaluation.strengths,
+                improvements: evaluation.improvements,
+                completionReason: evaluation.completionReason,
+                durationSeconds: evaluation.durationSeconds,
+                totalQuestions: evaluation.totalQuestions,
+                totalResponses: evaluation.totalResponses,
+                skillsCovered: evaluation.skillsCovered,
+                requirementsSummary: evaluation.requirementsSummary,
+              }),
+              12000,
+              'Saved locally, but the dashboard did not confirm in time.'
+            );
+          } catch (persistErr) {
+            console.error('Failed to persist interview result', persistErr);
+            persistenceErrorMessage = persistErr?.message || 'Interview summary saved locally, but not stored to your profile.';
+          }
+        }
+
+        finalizationGuardRef.current = 'succeeded';
+        if (!isMounted) {
+          return;
+        }
+        setFinalizationStatus('succeeded');
+        sessionTerminationRef.current = true;
+
+        navigate('/interview/results', {
+          replace: true,
+          state: {
+            evaluation,
+            job: jobContext,
+            applicationId,
+            completionReason: evaluation.completionReason,
+            persistenceError: persistenceErrorMessage,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to finalize interview session', err);
+        finalizationGuardRef.current = 'failed';
+        if (!isMounted) {
+          return;
+        }
+        setFinalizationStatus('failed');
+        setFinalizationError(err?.message || 'Unable to generate your interview feedback.');
+      } finally {
+        if (isMounted) {
+          setIsFinalizing(false);
+        }
+      }
+    };
+
+    runFinalization();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isInterviewComplete, sessionId, completionReason, finalizationStatus, defaultDurationMinutes, remainingSeconds, applicationId, jobContext, navigate]);
+
+  useEffect(() => {
     if (!isInterviewComplete || !sessionId || sessionTerminationRef.current) {
+      return;
+    }
+
+    if (finalizationGuardRef.current === 'pending' || finalizationGuardRef.current === 'failed') {
+      return;
+    }
+
+    if (finalizationGuardRef.current === 'succeeded') {
+      sessionTerminationRef.current = true;
       return;
     }
     sessionTerminationRef.current = true;
@@ -330,6 +507,15 @@ const InterviewPage = () => {
     if (transcript.trim()) {
       sendMessage(transcript);
     }
+  };
+
+  const retryFinalize = () => {
+    if (finalizationGuardRef.current === 'pending') {
+      return;
+    }
+    finalizationGuardRef.current = 'idle';
+    setFinalizationStatus('idle');
+    setFinalizationError('');
   };
 
   const getPhaseDisplay = (phase) => {
@@ -368,8 +554,8 @@ const InterviewPage = () => {
     setIsRecording(false);
     setIsListening(false);
     setTimerActive(false);
-    setIsInterviewComplete(true);
     setCompletionReason('user-quit');
+    setIsInterviewComplete(true);
     setCurrentMessage('');
     setMessages((prev) => {
       const alreadyLogged = prev.some((msg) => msg.meta === 'user-quit');
@@ -419,6 +605,10 @@ const InterviewPage = () => {
           salary: jobContext.salary,
           tags: Array.isArray(jobContext.tags) ? jobContext.tags : [],
           interviewDurationMinutes: defaultDurationMinutes,
+          experienceLabel: jobContext.experience || '',
+          experienceKey,
+          industry: jobContext.industry || jobContext.category || '',
+          category: jobContext.category || '',
         } : null}
       />
     );
@@ -597,6 +787,19 @@ const InterviewPage = () => {
                     ? 'You ended the interview early. Review the conversation or start another session when you are ready.'
                     : 'The interviewer has wrapped up the session. Feel free to review the transcript or close the session.'}
               </span>
+              {finalizationStatus === 'pending' && (
+                <div className="finalization-status">
+                  <span>{isFinalizing ? 'Generating your AI feedback...' : 'Preparing your AI feedback...'}</span>
+                </div>
+              )}
+              {finalizationStatus === 'failed' && (
+                <div className="finalization-status finalization-status--error">
+                  <span>{finalizationError || 'We could not generate your interview summary.'}</span>
+                  <button type="button" onClick={retryFinalize} disabled={isFinalizing}>
+                    Retry summary
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

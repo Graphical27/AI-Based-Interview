@@ -42,6 +42,18 @@ export const sendInterviewMessage = (sessionId, message) => {
   return post('/interview/message', { sessionId, message });
 };
 
+export const finalizeInterviewSession = (sessionId, payload = {}) => {
+  if (!sessionId) {
+    return Promise.reject(new Error('Missing session identifier'));
+  }
+
+  return post('/interview/finalize', {
+    sessionId,
+    completionReason: payload.completionReason,
+    durationSeconds: payload.durationSeconds,
+  });
+};
+
 async function del(path) {
   const url = `${BASE_URL}${path}`;
   let response;
