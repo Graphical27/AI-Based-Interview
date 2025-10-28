@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api';
 function relativeTime(dateStr) {
   if (!dateStr) return '';
@@ -20,6 +21,7 @@ const categories = ['All','Engineering','Data','Product','Design'];
 const types = ['All','Full-time','Contract','Part-time','Internship'];
 
 const JobsView = () => {
+  const navigate = useNavigate();
   const [query,setQuery] = useState('');
   const [category,setCategory] = useState('All');
   const [jobType,setJobType] = useState('All');
@@ -62,16 +64,32 @@ const JobsView = () => {
     fetchMyApplications();
   }, []);
 
-  const handleApplyToJob = async (jobId) => {
+  const navigateToInterview = (job) => {
+    navigate('/interview', {
+      state: {
+        job,
+        durationMinutes: job.interviewDurationMinutes || job.durationMinutes || 30,
+      }
+    });
+  };
+
+  const handleApplyToJob = async (job) => {
+    const jobId = job._id;
     setApplying(prev => new Set(prev).add(jobId));
     try {
       await api.applyForJob(jobId);
       // Refresh applications
       const applications = await api.getMyApplications();
       setMyApplications(applications);
+      navigateToInterview(job);
     } catch (error) {
       console.error('Failed to apply:', error);
-      alert(error.message || 'Failed to apply for job');
+      const alreadyApplied = error.status === 400 && /already applied/i.test(error.message || '');
+      if (alreadyApplied) {
+        navigateToInterview(job);
+      } else {
+        alert(error.message || 'Failed to apply for job');
+      }
     } finally {
       setApplying(prev => {
         const newSet = new Set(prev);
@@ -321,7 +339,7 @@ const JobsView = () => {
                           {skill}
                         </span>
                       ))}
-                      {job.tags.length > 4 && (
+                      {Array.isArray(job.tags) && job.tags.length > 4 && (
                         <span className="px-3 py-1 bg-gray-800/60 text-gray-400 text-xs rounded-lg border border-gray-700/50">
                           +{(job.tags||[]).length - 4} more
                         </span>
@@ -352,7 +370,7 @@ const JobsView = () => {
                       
                       return (
                         <button 
-                          onClick={(e) => {e.stopPropagation(); handleApplyToJob(job._id);}}
+                          onClick={(e) => {e.stopPropagation(); handleApplyToJob(job);}}
                           disabled={isApplying}
                           className="flex items-center gap-2 px-4 py-2 bg-green-400 hover:bg-green-500 disabled:bg-gray-600 text-black font-semibold rounded-lg transition-all text-sm shadow-lg shadow-green-400/25 disabled:shadow-none"
                         >
@@ -363,12 +381,12 @@ const JobsView = () => {
                     <button 
                       onClick={(e) => {e.stopPropagation(); toggleSave(job._id);}}
                       className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm ${
-                        saved.has(job.id) 
+                        saved.has(job._id) 
                           ? 'bg-green-400/20 text-green-400 border-green-400/30' 
                           : 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 border-gray-700'
                       }`}
                     >
-                      <svg className="w-4 h-4" fill={saved.has(job.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4" fill={saved.has(job._id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
                       </svg>
                       {saved.has(job._id) ? 'Saved' : 'Save'}
@@ -487,18 +505,22 @@ const JobsView = () => {
               </div>
 
               <div className="space-y-3">
-                <button className="w-full bg-gradient-to-r from-green-400 to-teal-400 hover:from-green-500 hover:to-teal-500 text-black font-semibold py-3 px-4 rounded-xl transition-all shadow-lg shadow-green-400/25">
-                  Apply Now
+                <button
+                  className="w-full bg-gradient-to-r from-green-400 to-teal-400 hover:from-green-500 hover:to-teal-500 text-black font-semibold py-3 px-4 rounded-xl transition-all shadow-lg shadow-green-400/25"
+                  onClick={() => handleApplyToJob(selectedJob)}
+                  disabled={applying.has(selectedJob._id)}
+                >
+                  {applying.has(selectedJob._id) ? 'Applying...' : 'Apply Now'}
                 </button>
                 <button 
-                  onClick={() => toggleSave(selectedJob.id)}
+                  onClick={() => toggleSave(selectedJob._id)}
                   className={`w-full font-medium py-3 px-4 rounded-xl transition-all backdrop-blur-sm ${
-                    saved.has(selectedJob.id)
+                    saved.has(selectedJob._id)
                       ? 'bg-green-400/20 text-green-400 border border-green-400/30'
                       : 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 border border-gray-700'
                   }`}
                 >
-                  {saved.has(selectedJob.id) ? 'Saved ✓' : 'Save for Later'}
+                  {saved.has(selectedJob._id) ? 'Saved ✓' : 'Save for Later'}
                 </button>
                 <button className="w-full bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 font-medium py-3 px-4 rounded-xl transition-all">
                   Practice Interview for this Role

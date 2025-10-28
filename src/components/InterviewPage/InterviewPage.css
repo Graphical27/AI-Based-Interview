@@ -10,6 +10,47 @@
   flex-direction: column;
 }
 
+.interview-page--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.interview-empty-state {
+  background: rgba(26, 26, 26, 0.85);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.interview-empty-state h1 {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.interview-empty-state p {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 2rem;
+}
+
+.empty-state-button {
+  background: linear-gradient(135deg, #00F2C3, #00D4AA);
+  color: #0D0D0D;
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem 2.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.empty-state-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(0, 242, 195, 0.35);
+}
+
 /* Header */
 .interview-header {
   background: rgba(26, 26, 26, 0.8);
@@ -48,6 +89,19 @@
   padding: 0.5rem 1rem;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.interview-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 242, 195, 0.12);
+  border: 1px solid rgba(0, 242, 195, 0.3);
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #00F2C3;
+  font-size: 0.95rem;
 }
 
 .speech-toggle {
@@ -110,12 +164,101 @@
 .interview-container {
   flex: 1;
   display: grid;
-  grid-template-columns: 400px 1fr;
+  grid-template-columns: minmax(320px, 380px) 1fr;
   gap: 2rem;
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+}
+
+.interview-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.job-brief {
+  background: rgba(26, 26, 26, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(0, 242, 195, 0.2);
+  padding: 1.5rem;
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.job-brief header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.job-brief header p {
+  margin: 0.35rem 0 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.job-brief dl {
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.job-brief dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.job-brief dt {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: rgba(0, 242, 195, 0.8);
+}
+
+.job-brief dd {
+  margin: 0;
+}
+
+.skills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skills-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: rgba(0, 242, 195, 0.8);
+  letter-spacing: 0.05em;
+}
+
+.skills-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.skills-list span {
+  padding: 0.35rem 0.75rem;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.job-description p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-height: 8rem;
+  overflow-y: auto;
 }
 
 /* Webcam Section */
@@ -228,6 +371,17 @@
   justify-content: center;
 }
 
+.completion-message {
+  background: rgba(0, 242, 195, 0.1);
+  border: 1px solid rgba(0, 242, 195, 0.3);
+  color: #9df5e3;
+  padding: 1rem;
+  margin: 1rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
 /* Footer */
 .interview-footer {
   background: rgba(26, 26, 26, 0.8);
@@ -258,9 +412,17 @@
 /* Responsive Design */
 @media (max-width: 1200px) {
   .interview-container {
-    grid-template-columns: 350px 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.5rem;
     padding: 1.5rem;
+  }
+
+  .interview-left {
+    flex-direction: column;
+  }
+
+  .job-brief {
+    order: -1;
   }
 }
 

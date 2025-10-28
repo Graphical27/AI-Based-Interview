@@ -6,8 +6,8 @@ const ChatInterface = ({
   currentMessage, 
   setCurrentMessage, 
   onSendMessage, 
-  onKeyPress,
-  messagesEndRef 
+  messagesEndRef,
+  disabled = false
 }) => {
   
   const formatTime = (timestamp) => {
@@ -19,9 +19,12 @@ const ChatInterface = ({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (currentMessage.trim()) {
-      onSendMessage(currentMessage.trim());
+    if (disabled || !currentMessage.trim()) {
+      return;
     }
+    Promise.resolve(onSendMessage(currentMessage.trim())).catch(() => {
+      // Errors handled upstream; swallow promise rejection to avoid console noise
+    });
   };
 
   const handleKeyDown = (e) => {
@@ -69,14 +72,18 @@ const ChatInterface = ({
             value={currentMessage}
             onChange={(e) => setCurrentMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your response here... You can type or use the microphone above to speak your answer."
+            placeholder={disabled
+              ? 'Interview complete. No further responses are required.'
+              : 'Type your response here... You can type or use the microphone above to speak your answer.'
+            }
             className="message-input"
             rows="3"
+            disabled={disabled}
           />
           <button 
             type="submit" 
             className="send-button"
-            disabled={!currentMessage.trim()}
+            disabled={!currentMessage.trim() || disabled}
             title="Send Message (Enter)"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './VoiceRecorder.css';
 
-const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListening }) => {
+const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListening, disabled = false }) => {
   const [recognition, setRecognition] = useState(null);
   const [error, setError] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -71,9 +71,19 @@ const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListe
     };
   }, [onSpeechResult, setIsRecording, setIsListening]);
 
+  useEffect(() => {
+    if (disabled && recognition && isRecording) {
+      recognition.stop();
+    }
+  }, [disabled, recognition, isRecording]);
+
   const startRecording = () => {
     if (!recognition) {
       setError('Speech recognition not available');
+      return;
+    }
+
+    if (disabled) {
       return;
     }
 
@@ -104,6 +114,9 @@ const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListe
   };
 
   const toggleRecording = () => {
+    if (disabled) {
+      return;
+    }
     if (isRecording) {
       stopRecording();
     } else {
@@ -117,7 +130,7 @@ const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListe
         <button
           onClick={toggleRecording}
           className={`record-button ${isRecording ? 'recording' : ''}`}
-          disabled={!recognition}
+          disabled={!recognition || disabled}
           title={isRecording ? 'Stop Recording' : 'Start Recording'}
         >
           {isRecording ? (
@@ -162,10 +175,11 @@ const VoiceRecorder = ({ onSpeechResult, isRecording, setIsRecording, setIsListe
       {/* Recording Instructions */}
       <div className="recording-instructions">
         <p>
-          {!recognition 
-            ? 'Voice input not available in this browser' 
-            : 'Optional: Click the microphone to speak your answer, or simply type below'
-          }
+          {!recognition
+            ? 'Voice input not available in this browser'
+            : disabled
+              ? 'Voice input pauses while the AI is speaking or after the interview wraps up.'
+              : 'Optional: Click the microphone to speak your answer, or simply type below'}
         </p>
         {recognition && (
           <div className="voice-benefits">

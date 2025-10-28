@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './PreInterviewSetup.css';
 
-const PreInterviewSetup = ({ onStartInterview }) => {
-  const [formData, setFormData] = useState({
-    role: '',
-    experience: '',
-    company: '',
-    skills: '',
-    industry: '',
-    focus: ''
-  });
+const buildInitialState = (defaults = {}) => ({
+  role: defaults.role || '',
+  experience: defaults.experience || '',
+  company: defaults.company || '',
+  skills: defaults.skills || '',
+  industry: defaults.industry || '',
+  focus: defaults.focus || ''
+});
+
+const PreInterviewSetup = ({ onStartInterview, isInitializing = false, defaultProfile = null, jobDetails = null }) => {
+  const [formData, setFormData] = useState(() => buildInitialState(defaultProfile));
 
   const [isStarting, setIsStarting] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [errors, setErrors] = useState({});
+  const countdownTimerRef = useRef(null);
 
   const experienceLevels = [
     { value: 'fresher', label: '0-1 years (Fresher/Entry Level)' },
@@ -57,10 +60,11 @@ const PreInterviewSetup = ({ onStartInterview }) => {
     }));
     
     // Clear error when user starts typing
-    if (errors[name]) {
+    if (errors[name] || errors.general) {
       setErrors(prev => ({
         ...prev,
-        [name]: ''
+        [name]: '',
+        general: ''
       }));
     }
   };
@@ -85,24 +89,69 @@ const PreInterviewSetup = ({ onStartInterview }) => {
   };
 
   const startCountdown = () => {
+    if (isStarting || isInitializing) {
+      return;
+    }
+
     if (!validateForm()) {
       return;
     }
 
+    setErrors({});
     setIsStarting(true);
     setCountdown(5);
 
-    const timer = setInterval(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+    }
+
+    countdownTimerRef.current = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          clearInterval(timer);
-          onStartInterview(formData);
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+
+          Promise.resolve(onStartInterview(formData)).catch((err) => {
+            const message = err?.message || 'Unable to start the interview. Please try again.';
+            setErrors(prev => ({
+              ...prev,
+              general: message
+            }));
+            setIsStarting(false);
+            setCountdown(5);
+          });
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
   };
+
+  useEffect(() => {
+    if (!defaultProfile) {
+      return;
+    }
+    setFormData(prev => {
+      const next = { ...prev };
+      Object.entries(buildInitialState(defaultProfile)).forEach(([key, value]) => {
+        if (value && !prev[key]) {
+          next[key] = value;
+        }
+      });
+      return next;
+    });
+  }, [defaultProfile]);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (isStarting) {
     return (
@@ -146,8 +195,60 @@ const PreInterviewSetup = ({ onStartInterview }) => {
       <div className="setup-container">
         <div className="setup-header">
           <h1>Interview Setup</h1>
-          <p>Please provide some details to personalize your interview experience</p>
+          <p>Please review and confirm the details below to personalize your interview experience</p>
         </div>
+
+        {jobDetails && (
+          <div className="job-context-card">
+            <div className="job-context-header">
+              <div className="job-context-icon">💼</div>
+              <div>
+                <h2>{jobDetails.title}</h2>
+                <p>{jobDetails.company}</p>
+              </div>
+            </div>
+            <div className="job-context-body">
+              {jobDetails.location && (
+                <div className="job-context-row">
+                  <span className="label">Location</span>
+                  <span>{jobDetails.location}</span>
+                </div>
+              )}
+              {jobDetails.type && (
+                <div className="job-context-row">
+                  <span className="label">Role Type</span>
+                  <span>{jobDetails.type}</span>
+                </div>
+              )}
+              {jobDetails.salary && (
+                <div className="job-context-row">
+                  <span className="label">Salary</span>
+                  <span>{jobDetails.salary}</span>
+                </div>
+              )}
+              {jobDetails.tags?.length ? (
+                <div className="job-context-row">
+                  <span className="label">Focus Skills</span>
+                  <span className="chips">{jobDetails.tags.slice(0, 6).map(tag => (
+                    <span key={tag}>{tag}</span>
+                  ))}</span>
+                </div>
+              ) : null}
+              {jobDetails.interviewDurationMinutes ? (
+                <div className="job-context-row">
+                  <span className="label">Interview Duration</span>
+                  <span>{jobDetails.interviewDurationMinutes} minutes</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {errors.general && (
+          <div className="setup-general-error">
+            {errors.general}
+          </div>
+        )}
 
         <form className="setup-form">
           {/* Required Fields */}
@@ -273,7 +374,7 @@ const PreInterviewSetup = ({ onStartInterview }) => {
               type="button"
               onClick={startCountdown}
               className="start-interview-btn"
-              disabled={isStarting}
+              disabled={isStarting || isInitializing}
             >
               <span className="btn-icon">🚀</span>
               Start My Interview

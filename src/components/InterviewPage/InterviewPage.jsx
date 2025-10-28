@@ -1,15 +1,56 @@
-import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import WebcamCapture from './WebcamCapture';
 import VoiceRecorder from './VoiceRecorder';
 import ChatInterface from './ChatInterface';
 import TypingAnimation from './TypingAnimation';
 import PreInterviewSetup from './PreInterviewSetup';
+import { startInterviewSession, sendInterviewMessage } from '../../services/interviewApi';
 import './InterviewPage.css';
 
+const inferExperienceLevel = (job) => {
+  const text = `${job?.title || ''} ${job?.description || ''}`.toLowerCase();
+  const rules = [
+    { level: 'lead', patterns: ['lead', 'principal', 'architect', 'head of'] },
+    { level: 'senior', patterns: ['senior', 'sr.', 'staff', 'expert'] },
+    { level: 'mid', patterns: ['mid', 'intermediate', '3+', '4+', '5+'] },
+    { level: 'junior', patterns: ['junior', 'jr.', 'entry', 'graduate', '1-2', '0-2'] },
+    { level: 'fresher', patterns: ['fresher', 'intern', 'trainee'] },
+  ];
+
+  for (const rule of rules) {
+    if (rule.patterns.some(keyword => text.includes(keyword))) {
+      return rule.level;
+    }
+  }
+
+  return 'mid';
+};
+
 const InterviewPage = () => {
-  const [socket, setSocket] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const jobContext = location.state?.job || null;
+  const defaultDurationMinutes = location.state?.durationMinutes || jobContext?.interviewDurationMinutes || jobContext?.durationMinutes || 30;
+  const profileDefaults = useMemo(() => {
+    if (location.state?.profileDefaults) {
+      return location.state.profileDefaults;
+    }
+    if (!jobContext) {
+      return null;
+    }
+    const tags = Array.isArray(jobContext.tags) ? jobContext.tags : [];
+    return {
+      role: jobContext.title || '',
+      company: jobContext.company || '',
+      skills: tags.join(', '),
+      focus: jobContext.category || '',
+      industry: jobContext.industry || jobContext.category || '',
+      experience: inferExperienceLevel(jobContext),
+    };
+  }, [jobContext, location.state?.profileDefaults]);
+
+  const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isAiTyping, setIsAiTyping] = useState(false);
@@ -19,65 +60,26 @@ const InterviewPage = () => {
   const [error, setError] = useState('');
   const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
   const [interviewStarted, setInterviewStarted] = useState(false);
-  const [userProfile, setUserProfile] = useState(null);
+  const [isInterviewComplete, setIsInterviewComplete] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(defaultDurationMinutes * 60);
+  const [timerActive, setTimerActive] = useState(false);
+  const [completionReason, setCompletionReason] = useState('');
   
   const messagesEndRef = useRef(null);
-  const speechSynthesisRef = useRef(null);
+  const timerNotifiedRef = useRef(false);
 
   useEffect(() => {
-    // Only initialize socket connection after interview starts
-    if (!interviewStarted) return;
-
-    // Initialize socket connection
-    const newSocket = io('http://localhost:3001');
-    
-    newSocket.on('connect', () => {
-      console.log('Connected to server');
-      setSocket(newSocket);
-    });
-
-    newSocket.on('ai-response', (data) => {
-      setIsAiTyping(true);
-      
-      // Simulate typing delay
-      setTimeout(() => {
-        setMessages(prev => [...prev, {
-          id: Date.now(),
-          role: 'ai',
-          message: data.message,
-          timestamp: new Date(),
-          phase: data.phase
-        }]);
-        setInterviewPhase(data.phase);
-        setIsAiTyping(false);
-        
-        // Convert AI response to speech only if enabled
-        if (isSpeechEnabled) {
-          speakText(data.message);
-        }
-      }, 1000 + Math.random() * 2000); // Random delay between 1-3 seconds
-    });
-
-    newSocket.on('error', (data) => {
-      setError(data.message);
-      setIsAiTyping(false);
-    });
-
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from server');
-    });
-
-    // Start interview session with user profile
-    newSocket.emit('start-interview', userProfile);
-
     return () => {
-      newSocket.disconnect();
-      // Stop any ongoing speech synthesis
-      if (speechSynthesisRef.current) {
-        speechSynthesis.cancel();
-      }
+      speechSynthesis.cancel();
     };
-  }, [interviewStarted, userProfile]);
+  }, []);
+
+  useEffect(() => {
+    if (!interviewStarted) {
+      setRemainingSeconds(defaultDurationMinutes * 60);
+    }
+  }, [defaultDurationMinutes, interviewStarted]);
 
   useEffect(() => {
     scrollToBottom();
@@ -155,7 +157,6 @@ const InterviewPage = () => {
             utterance.voice = voice;
             console.log(`Using voice: ${voice.name} (${voice.lang})`);
           }
-          speechSynthesisRef.current = utterance;
           speechSynthesis.speak(utterance);
         };
       } else {
@@ -164,7 +165,6 @@ const InterviewPage = () => {
           utterance.voice = voice;
           console.log(`Using voice: ${voice.name} (${voice.lang})`);
         }
-        speechSynthesisRef.current = utterance;
         speechSynthesis.speak(utterance);
       }
 
@@ -179,13 +179,60 @@ const InterviewPage = () => {
     }
   };
 
-  const sendMessage = (message) => {
-    if (!message.trim() || !socket) return;
+  const handleStartInterview = async (profileData) => {
+    if (isStartingSession) {
+      return;
+    }
+
+    setIsStartingSession(true);
+    setError('');
+    setMessages([]);
+    setInterviewPhase('introduction');
+    setIsInterviewComplete(false);
+    setRemainingSeconds(defaultDurationMinutes * 60);
+    setCompletionReason('');
+    timerNotifiedRef.current = false;
+
+    try {
+      const response = await startInterviewSession(profileData);
+      const initialMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'ai',
+        message: response.message,
+        timestamp: new Date(),
+        phase: response.phase
+      };
+
+      setSessionId(response.sessionId);
+      setMessages([initialMessage]);
+      setInterviewPhase(response.phase);
+      setInterviewStarted(true);
+      setIsInterviewComplete(Boolean(response.done));
+      setTimerActive(true);
+
+      if (isSpeechEnabled) {
+        speakText(response.message);
+      }
+
+      return response;
+    } catch (err) {
+      console.error('Failed to start interview session', err);
+      throw err;
+    } finally {
+      setIsStartingSession(false);
+    }
+  };
+
+  const sendMessage = async (message) => {
+    const trimmed = message.trim();
+    if (!trimmed || !sessionId || isAiTyping || isInterviewComplete) {
+      return;
+    }
 
     const userMessage = {
-      id: Date.now(),
+      id: `user-${Date.now()}`,
       role: 'user',
-      message: message.trim(),
+      message: trimmed,
       timestamp: new Date(),
       phase: interviewPhase
     };
@@ -193,29 +240,83 @@ const InterviewPage = () => {
     setMessages(prev => [...prev, userMessage]);
     setCurrentMessage('');
     setIsAiTyping(true);
+    setError('');
 
-    // Send to server
-    socket.emit('user-message', {
-      message: message.trim(),
-      sessionId: sessionId
-    });
+    try {
+      const response = await sendInterviewMessage(sessionId, trimmed);
+      const aiMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'ai',
+        message: response.message,
+        timestamp: new Date(),
+        phase: response.phase
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+      setInterviewPhase(response.phase);
+      setIsInterviewComplete(Boolean(response.done));
+      if (response.done) {
+        setCompletionReason(prev => prev || 'agent-complete');
+      }
+
+      if (isSpeechEnabled) {
+        speakText(response.message);
+      }
+    } catch (err) {
+      console.error('Failed to send interview message', err);
+      setError(err.message || 'Unable to process your response. Please try again.');
+    } finally {
+      setIsAiTyping(false);
+    }
   };
+
+  useEffect(() => {
+    if (!timerActive || isInterviewComplete) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setRemainingSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setIsInterviewComplete(true);
+          setTimerActive(false);
+          setCompletionReason(prevReason => prevReason || 'time-expired');
+          if (!timerNotifiedRef.current) {
+            timerNotifiedRef.current = true;
+            setMessages(prevMessages => {
+              const alreadyLogged = prevMessages.some(msg => msg.meta === 'timer-expired');
+              if (alreadyLogged) {
+                return prevMessages;
+              }
+              return [...prevMessages, {
+                id: `system-${Date.now()}`,
+                role: 'ai',
+                message: 'We have reached the end of the scheduled interview time. Thank you for your responses!',
+                timestamp: new Date(),
+                phase: 'closing',
+                meta: 'timer-expired'
+              }];
+            });
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timerActive, isInterviewComplete]);
+
+  useEffect(() => {
+    if (isInterviewComplete) {
+      setTimerActive(false);
+    }
+  }, [isInterviewComplete]);
 
   const handleSpeechResult = (transcript) => {
     if (transcript.trim()) {
       sendMessage(transcript);
-    }
-  };
-
-  const handleStartInterview = (profileData) => {
-    setUserProfile(profileData);
-    setInterviewStarted(true);
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(currentMessage);
     }
   };
 
@@ -233,9 +334,45 @@ const InterviewPage = () => {
 
   const phaseInfo = getPhaseDisplay(interviewPhase);
 
+  const formatTimer = (seconds) => {
+    const safeSeconds = Math.max(0, seconds | 0);
+    const minutes = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  if (!jobContext && !profileDefaults) {
+    return (
+      <div className="interview-page interview-page--empty">
+        <div className="interview-empty-state">
+          <h1>No Interview Selected</h1>
+          <p>Please choose a role from the job board to launch an interview.</p>
+          <button onClick={() => navigate('/portal')} className="empty-state-button">
+            Return to Jobs
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Show pre-interview setup if interview hasn't started
   if (!interviewStarted) {
-    return <PreInterviewSetup onStartInterview={handleStartInterview} />;
+    return (
+      <PreInterviewSetup
+        onStartInterview={handleStartInterview}
+        isInitializing={isStartingSession}
+        defaultProfile={profileDefaults}
+        jobDetails={jobContext ? {
+          title: jobContext.title,
+          company: jobContext.company,
+          location: jobContext.location,
+          type: jobContext.type,
+          salary: jobContext.salary,
+          tags: Array.isArray(jobContext.tags) ? jobContext.tags : [],
+          interviewDurationMinutes: defaultDurationMinutes,
+        } : null}
+      />
+    );
   }
 
   return (
@@ -251,11 +388,18 @@ const InterviewPage = () => {
             ></span>
             <span className="phase-text">{phaseInfo.text}</span>
           </div>
+          <div className="interview-timer" title="Remaining interview time">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M15.07 1L14 2.07l1.9 1.9A8.93 8.93 0 0 0 12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7c1.1 0 2.15.24 3.07.67L13 7h6V1z"/>
+            </svg>
+            <span>{formatTimer(remainingSeconds)}</span>
+          </div>
           <button 
             className={`speech-toggle ${isSpeechEnabled ? 'enabled' : 'disabled'}`}
             onClick={() => {
-              setIsSpeechEnabled(!isSpeechEnabled);
-              if (!isSpeechEnabled) {
+              const nextState = !isSpeechEnabled;
+              setIsSpeechEnabled(nextState);
+              if (!nextState) {
                 // Stop any ongoing speech when disabling
                 speechSynthesis.cancel();
               }
@@ -277,23 +421,71 @@ const InterviewPage = () => {
       </div>
 
       <div className="interview-container">
-        {/* Webcam Section */}
-        <div className="webcam-section">
-          <WebcamCapture />
-          <div className="controls-section">
-            <VoiceRecorder
-              onSpeechResult={handleSpeechResult}
-              isRecording={isRecording}
-              setIsRecording={setIsRecording}
-              setIsListening={setIsListening}
-            />
-            <div className="recording-status">
-              {isListening && (
-                <div className="listening-indicator">
-                  <div className="pulse-dot"></div>
-                  <span>Listening...</span>
+        <div className="interview-left">
+          {jobContext && (
+            <aside className="job-brief">
+              <header>
+                <h2>{jobContext.title}</h2>
+                <p>{jobContext.company}</p>
+              </header>
+              <dl>
+                {jobContext.location && (
+                  <div>
+                    <dt>Location</dt>
+                    <dd>{jobContext.location}</dd>
+                  </div>
+                )}
+                {jobContext.type && (
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{jobContext.type}</dd>
+                  </div>
+                )}
+                {jobContext.salary && (
+                  <div>
+                    <dt>Salary</dt>
+                    <dd>{jobContext.salary}</dd>
+                  </div>
+                )}
+              </dl>
+              {Array.isArray(jobContext.tags) && jobContext.tags.length > 0 && (
+                <div className="skills">
+                  <span className="skills-label">Key Skills</span>
+                  <div className="skills-list">
+                    {jobContext.tags.slice(0, 8).map(tag => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
                 </div>
               )}
+              {jobContext.description && (
+                <div className="job-description">
+                  <span className="skills-label">Highlights</span>
+                  <p>{jobContext.description}</p>
+                </div>
+              )}
+            </aside>
+          )}
+
+          {/* Webcam Section */}
+          <div className="webcam-section">
+            <WebcamCapture />
+            <div className="controls-section">
+              <VoiceRecorder
+                onSpeechResult={handleSpeechResult}
+                isRecording={isRecording}
+                setIsRecording={setIsRecording}
+                setIsListening={setIsListening}
+                disabled={isAiTyping || isInterviewComplete}
+              />
+              <div className="recording-status">
+                {isListening && (
+                  <div className="listening-indicator">
+                    <div className="pulse-dot"></div>
+                    <span>Listening...</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -305,8 +497,8 @@ const InterviewPage = () => {
             currentMessage={currentMessage}
             setCurrentMessage={setCurrentMessage}
             onSendMessage={sendMessage}
-            onKeyPress={handleKeyPress}
             messagesEndRef={messagesEndRef}
+            disabled={isAiTyping || isInterviewComplete}
           />
           
           {/* Typing Animation */}
@@ -326,6 +518,16 @@ const InterviewPage = () => {
             <div className="error-message">
               <span>{error}</span>
               <button onClick={() => setError('')} className="error-close">×</button>
+            </div>
+          )}
+
+          {isInterviewComplete && (
+            <div className="completion-message">
+              <span>
+                {completionReason === 'time-expired'
+                  ? 'Time is up. Feel free to review the transcript or close the session.'
+                  : 'The interviewer has wrapped up the session. Feel free to review the transcript or close the session.'}
+              </span>
             </div>
           )}
         </div>

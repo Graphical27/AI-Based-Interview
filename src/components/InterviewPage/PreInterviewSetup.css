@@ -44,6 +44,94 @@
   margin: 0;
 }
 
+.setup-general-error {
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: #ff9ca1;
+  border-radius: 10px;
+  padding: 0.85rem 1.25rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.job-context-card {
+  background: rgba(0, 242, 195, 0.08);
+  border: 1px solid rgba(0, 242, 195, 0.2);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.job-context-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.job-context-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #FFFFFF;
+}
+
+.job-context-header p {
+  margin: 0.25rem 0 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.job-context-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(0, 242, 195, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.job-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.job-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.job-context-row .label {
+  min-width: 120px;
+  font-weight: 600;
+  color: rgba(0, 242, 195, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+}
+
+.job-context-row .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.job-context-row .chips span {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.8rem;
+  color: #E6FFFA;
+}
+
 .setup-form {
   display: flex;
   flex-direction: column;
@@ -285,6 +373,11 @@
     padding: 2rem 1.5rem;
   }
 
+  .job-context-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .setup-header h1 {
     font-size: 2rem;
   }
@@ -330,6 +423,10 @@
 
   .setup-header h1 {
     font-size: 1.75rem;
+  }
+
+  .job-context-card {
+    padding: 1.25rem;
   }
 
   .form-section {
