@@ -15,6 +15,10 @@ function relativeTime(dateStr) {
   return `${weeks} weeks ago`;
 }
 
+const resolveInterviewDuration = (job) => {
+  return Number(job?.interviewDurationMinutes) || Number(job?.durationMinutes) || 20;
+};
+
 const jobsSeed = [];
 
 const categories = ['All','Engineering','Data','Product','Design'];
@@ -68,7 +72,7 @@ const JobsView = () => {
     navigate('/interview', {
       state: {
         job,
-        durationMinutes: job.interviewDurationMinutes || job.durationMinutes || 30,
+        durationMinutes: resolveInterviewDuration(job),
       }
     });
   };
@@ -312,6 +316,12 @@ const JobsView = () => {
                         </svg>
                         {job.salary}
                       </div>
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 4a8 8 0 1 0 8 8 8.01 8.01 0 0 0-8-8zm.5 4h-1v5l4.25 2.52.5-.84-3.75-2.18z" />
+                        </svg>
+                        {resolveInterviewDuration(job)} min interview
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 mb-4">
@@ -476,6 +486,7 @@ const JobsView = () => {
                   { icon: '💰', label: 'Salary', value: selectedJob.salary },
                   { icon: selectedJob.remote ? '🏠' : '🏢', label: 'Work Type', value: selectedJob.remote ? 'Remote' : 'On-site' },
                   { icon: '⏰', label: 'Job Type', value: selectedJob.type },
+                  { icon: '⏱️', label: 'Interview Duration', value: `${resolveInterviewDuration(selectedJob)} minutes` },
                   { icon: '📅', label: 'Posted', value: new Date(selectedJob.postedAt).toLocaleDateString() }
                 ].map((item, index) => (
                   <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-gray-800/30">

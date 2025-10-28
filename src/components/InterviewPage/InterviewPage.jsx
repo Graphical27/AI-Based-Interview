@@ -5,7 +5,7 @@ import VoiceRecorder from './VoiceRecorder';
 import ChatInterface from './ChatInterface';
 import TypingAnimation from './TypingAnimation';
 import PreInterviewSetup from './PreInterviewSetup';
-import { startInterviewSession, sendInterviewMessage } from '../../services/interviewApi';
+import { startInterviewSession, sendInterviewMessage, endInterviewSession } from '../../services/interviewApi';
 import './InterviewPage.css';
 
 const inferExperienceLevel = (job) => {
@@ -31,7 +31,7 @@ const InterviewPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const jobContext = location.state?.job || null;
-  const defaultDurationMinutes = location.state?.durationMinutes || jobContext?.interviewDurationMinutes || jobContext?.durationMinutes || 30;
+  const defaultDurationMinutes = Number(location.state?.durationMinutes) || Number(jobContext?.interviewDurationMinutes) || Number(jobContext?.durationMinutes) || 20;
   const profileDefaults = useMemo(() => {
     if (location.state?.profileDefaults) {
       return location.state.profileDefaults;
@@ -68,6 +68,7 @@ const InterviewPage = () => {
   
   const messagesEndRef = useRef(null);
   const timerNotifiedRef = useRef(false);
+  const sessionTerminationRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -192,6 +193,7 @@ const InterviewPage = () => {
     setRemainingSeconds(defaultDurationMinutes * 60);
     setCompletionReason('');
     timerNotifiedRef.current = false;
+    sessionTerminationRef.current = false;
 
     try {
       const response = await startInterviewSession(profileData);
@@ -314,6 +316,16 @@ const InterviewPage = () => {
     }
   }, [isInterviewComplete]);
 
+  useEffect(() => {
+    if (!isInterviewComplete || !sessionId || sessionTerminationRef.current) {
+      return;
+    }
+    sessionTerminationRef.current = true;
+    endInterviewSession(sessionId).catch((err) => {
+      console.warn('Failed to close interview session', err);
+    });
+  }, [isInterviewComplete, sessionId]);
+
   const handleSpeechResult = (transcript) => {
     if (transcript.trim()) {
       sendMessage(transcript);
@@ -339,6 +351,43 @@ const InterviewPage = () => {
     const minutes = Math.floor(safeSeconds / 60);
     const secs = safeSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleQuitInterview = () => {
+    if (isInterviewComplete) {
+      return;
+    }
+
+    const confirmed = window.confirm('Are you sure you want to end this interview early?');
+    if (!confirmed) {
+      return;
+    }
+
+    speechSynthesis.cancel();
+    setIsAiTyping(false);
+    setIsRecording(false);
+    setIsListening(false);
+    setTimerActive(false);
+    setIsInterviewComplete(true);
+    setCompletionReason('user-quit');
+    setCurrentMessage('');
+    setMessages((prev) => {
+      const alreadyLogged = prev.some((msg) => msg.meta === 'user-quit');
+      if (alreadyLogged) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          role: 'ai',
+          message: 'You chose to end the session early. Thanks for practicing—come back anytime for another run!',
+          timestamp: new Date(),
+          phase: 'closing',
+          meta: 'user-quit',
+        },
+      ];
+    });
   };
 
   if (!jobContext && !profileDefaults) {
@@ -417,6 +466,17 @@ const InterviewPage = () => {
             )}
             <span>{isSpeechEnabled ? 'Voice On' : 'Voice Off'}</span>
           </button>
+          <button
+            className="quit-interview-button"
+            onClick={handleQuitInterview}
+            disabled={isInterviewComplete}
+            title="End interview early"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M10 17v-3h4v3h5V7h-5v3h-4V7H5v10h5zm-5 2a2 2 0 0 1-2-2V7c0-1.105.892-2 1.998-2H9V3h6v2h4.002C20.108 5 21 5.895 21 7v10c0 1.105-.892 2-1.998 2z" />
+            </svg>
+            <span>Quit</span>
+          </button>
         </div>
       </div>
 
@@ -439,6 +499,12 @@ const InterviewPage = () => {
                   <div>
                     <dt>Type</dt>
                     <dd>{jobContext.type}</dd>
+                  </div>
+                )}
+                {(jobContext.interviewDurationMinutes || defaultDurationMinutes) && (
+                  <div>
+                    <dt>Duration</dt>
+                    <dd>{jobContext.interviewDurationMinutes || defaultDurationMinutes} minutes</dd>
                   </div>
                 )}
                 {jobContext.salary && (
@@ -499,6 +565,7 @@ const InterviewPage = () => {
             onSendMessage={sendMessage}
             messagesEndRef={messagesEndRef}
             disabled={isAiTyping || isInterviewComplete}
+            completionReason={completionReason}
           />
           
           {/* Typing Animation */}
@@ -526,7 +593,9 @@ const InterviewPage = () => {
               <span>
                 {completionReason === 'time-expired'
                   ? 'Time is up. Feel free to review the transcript or close the session.'
-                  : 'The interviewer has wrapped up the session. Feel free to review the transcript or close the session.'}
+                  : completionReason === 'user-quit'
+                    ? 'You ended the interview early. Review the conversation or start another session when you are ready.'
+                    : 'The interviewer has wrapped up the session. Feel free to review the transcript or close the session.'}
               </span>
             </div>
           )}

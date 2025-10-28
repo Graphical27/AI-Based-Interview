@@ -41,3 +41,39 @@ export const startInterviewSession = (profile) => {
 export const sendInterviewMessage = (sessionId, message) => {
   return post('/interview/message', { sessionId, message });
 };
+
+async function del(path) {
+  const url = `${BASE_URL}${path}`;
+  let response;
+
+  try {
+    response = await fetch(url, { method: 'DELETE' });
+  } catch (networkError) {
+    throw new Error(networkError?.message || 'Network error while contacting interview service');
+  }
+
+  const text = await response.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (parseError) {
+      // Ignore parse errors when body is plain text
+      data = { message: text };
+    }
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail || data?.message || data?.error;
+    throw new Error(detail || 'Interview service rejected the request');
+  }
+
+  return data;
+}
+
+export const endInterviewSession = (sessionId) => {
+  if (!sessionId) {
+    return Promise.resolve({ status: 'unknown-session' });
+  }
+  return del(`/interview/${sessionId}`);
+};

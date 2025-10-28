@@ -7,7 +7,8 @@ const ChatInterface = ({
   setCurrentMessage, 
   onSendMessage, 
   messagesEndRef,
-  disabled = false
+  disabled = false,
+  completionReason = ''
 }) => {
   
   const formatTime = (timestamp) => {
@@ -73,7 +74,11 @@ const ChatInterface = ({
             onChange={(e) => setCurrentMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={disabled
-              ? 'Interview complete. No further responses are required.'
+              ? completionReason === 'user-quit'
+                ? 'You ended this interview. Head back to the job board to start again.'
+                : completionReason === 'time-expired'
+                  ? 'Time is up. Review the transcript or close the session when ready.'
+                  : 'Interview complete. No further responses are required.'
               : 'Type your response here... You can type or use the microphone above to speak your answer.'
             }
             className="message-input"

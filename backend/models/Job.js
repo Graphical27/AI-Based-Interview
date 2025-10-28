@@ -13,6 +13,7 @@ const JobSchema = new mongoose.Schema({
   verified: { type: Boolean, default: false },
   description: String,
   logo: String,
+  interviewDurationMinutes: { type: Number, default: 20, min: 1, max: 180 },
   postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   postedAt: { type: Date, default: Date.now },
 }, { timestamps: true });

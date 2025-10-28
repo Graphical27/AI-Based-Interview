@@ -16,7 +16,8 @@ const RecruiterPage = ({ onLogout, user }) => {
     salary: '',
     description: '',
     requirements: '',
-    skills: ''
+    skills: '',
+    interviewDurationMinutes: 20,
   });
 
   useEffect(() => {
@@ -57,9 +58,10 @@ const RecruiterPage = ({ onLogout, user }) => {
   };
 
   const handleJobFormChange = (e) => {
+    const { name, value } = e.target;
     setJobForm({
       ...jobForm,
-      [e.target.name]: e.target.value
+      [name]: name === 'interviewDurationMinutes' ? Number(value) : value
     });
   };
 
@@ -73,6 +75,7 @@ const RecruiterPage = ({ onLogout, user }) => {
         ...jobForm,
         skills: jobForm.skills.split(',').map(skill => skill.trim()).filter(Boolean),
         requirements: jobForm.requirements.split('\n').filter(req => req.trim()),
+        interviewDurationMinutes: Number(jobForm.interviewDurationMinutes) || 20,
         postedBy: user._id
       };
 
@@ -88,7 +91,8 @@ const RecruiterPage = ({ onLogout, user }) => {
         salary: '',
         description: '',
         requirements: '',
-        skills: ''
+        skills: '',
+        interviewDurationMinutes: 20,
       });
     } catch (err) {
       setError(err.message || 'Failed to create job');
@@ -397,6 +401,23 @@ const RecruiterPage = ({ onLogout, user }) => {
                     <option value="Director">Director</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Interview Duration *</label>
+                <select
+                  name="interviewDurationMinutes"
+                  value={String(jobForm.interviewDurationMinutes)}
+                  onChange={handleJobFormChange}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-green-400 focus:ring-1 focus:ring-green-400"
+                >
+                  {[5, 10, 15, 20, 30, 45, 60].map((minutes) => (
+                    <option key={minutes} value={minutes}>{minutes} minutes</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  Candidates will see this timer during their mock interview. Defaults to 20 minutes if left unchanged.
+                </p>
               </div>
 
               <div>
