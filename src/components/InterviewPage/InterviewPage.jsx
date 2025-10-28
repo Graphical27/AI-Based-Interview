@@ -130,6 +130,14 @@ const InterviewPage = () => {
   const sessionTerminationRef = useRef(false);
   const finalizationGuardRef = useRef('idle');
   const interviewStartTimestampRef = useRef(null);
+  const componentMountedRef = useRef(true);
+
+  useEffect(() => {
+    componentMountedRef.current = true;
+    return () => {
+      componentMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -407,8 +415,6 @@ const InterviewPage = () => {
       ? Math.max(0, Math.round((Date.now() - interviewStartTimestampRef.current) / 1000))
       : Math.max(0, (defaultDurationMinutes * 60) - remainingSeconds);
 
-    let isMounted = true;
-
     const runFinalization = async () => {
       try {
         const evaluation = await withTimeout(
@@ -446,7 +452,7 @@ const InterviewPage = () => {
         }
 
         finalizationGuardRef.current = 'succeeded';
-        if (!isMounted) {
+        if (!componentMountedRef.current) {
           return;
         }
         setFinalizationStatus('succeeded');
@@ -465,23 +471,19 @@ const InterviewPage = () => {
       } catch (err) {
         console.error('Failed to finalize interview session', err);
         finalizationGuardRef.current = 'failed';
-        if (!isMounted) {
+        if (!componentMountedRef.current) {
           return;
         }
         setFinalizationStatus('failed');
         setFinalizationError(err?.message || 'Unable to generate your interview feedback.');
       } finally {
-        if (isMounted) {
+        if (componentMountedRef.current) {
           setIsFinalizing(false);
         }
       }
     };
 
     runFinalization();
-
-    return () => {
-      isMounted = false;
-    };
   }, [isInterviewComplete, sessionId, completionReason, finalizationStatus, defaultDurationMinutes, remainingSeconds, applicationId, jobContext, navigate]);
 
   useEffect(() => {

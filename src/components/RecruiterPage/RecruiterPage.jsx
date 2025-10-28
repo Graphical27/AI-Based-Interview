@@ -277,6 +277,23 @@ const RecruiterPage = ({ onLogout, user }) => {
                                   <p className="text-gray-500 text-xs">
                                     Applied {new Date(application.createdAt).toLocaleDateString()}
                                   </p>
+                                  {application.interviewCompletedAt && (
+                                    <p className="text-gray-500 text-xs">
+                                      Interviewed {new Date(application.interviewCompletedAt).toLocaleString()}
+                                    </p>
+                                  )}
+                                  {typeof application.interviewScore === 'number' && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <span className="px-2 py-1 bg-green-400/20 text-green-300 border border-green-400/30 rounded text-xs font-semibold">
+                                        AI Score {application.interviewScore.toFixed(1)}/10
+                                      </span>
+                                      {application.interviewSummary && (
+                                        <span className="text-gray-400 text-xs max-w-[18rem] truncate" title={application.interviewSummary}>
+                                          {application.interviewSummary}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className={`px-2 py-1 rounded text-xs font-medium ${
