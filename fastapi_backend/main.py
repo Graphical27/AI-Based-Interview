@@ -1,104 +1,41 @@
 import os
+import json
 import re
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from uuid import uuid4
+
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+# --- 1. Setup & Configuration ---
+load_dotenv()
 
-def _split_skills(raw: str) -> List[str]:
-    if not raw:
-        return []
-    # Split by comma, semicolon, or newline and strip whitespace
-    parts = re.split(r"[,;\n]+", raw)
-    cleaned = [item.strip() for item in parts if item.strip()]
-    # Deduplicate while preserving order
-    seen = set()
-    unique: List[str] = []
-    for item in cleaned:
-        key = item.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-    return unique
+API_KEY = os.getenv("GEMINI_API_KEY")
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in .env file.")
 
+client = genai.Client(api_key=API_KEY)
 
-EXPERIENCE_LABELS: Dict[str, str] = {
-    "fresher": "entry-level professional",
-    "junior": "early-career engineer",
-    "mid": "mid-level engineer",
-    "senior": "senior engineer",
-    "lead": "lead/principal-level expert",
-}
+# Use the latest stable model
+MODEL_NAME = "gemini-2.0-flash" 
 
-
-EXPERIENCE_PROMPTS: Dict[str, str] = {
-    "fresher": (
-        "Since you're getting started professionally, could you walk me through a project or coursework where you applied {primary_skill}? "
-        "What role did you play and what was the biggest thing you learned?"
-    ),
-    "junior": (
-        "With a couple of years of experience, I'm curious about a situation where you had to own a feature around {primary_skill}. "
-        "How did you approach the problem and what impact did it have?"
-    ),
-    "mid": (
-        "As a mid-level engineer, tell me about a time you were accountable for delivering {primary_skill}-focused work end-to-end. "
-        "What trade-offs did you manage and how did you measure success?"
-    ),
-    "senior": (
-        "At the senior level we lean on you for depth and leadership. Can you describe a complex challenge involving {primary_skill} where you guided others or shaped the direction?"
-    ),
-    "lead": (
-        "From a principal perspective, I'm interested in a strategic decision you made involving {primary_skill}. "
-        "What context did you evaluate and how did your call influence the wider organisation?"
-    ),
-}
-
-
-BEHAVIORAL_PROMPTS: Dict[str, str] = {
-    "default": (
-        "Tell me about a moment when the team hit resistance on an important goal. "
-        "How did you help everyone get back on track, and what did you take away from the experience?"
-    ),
-    "startup": (
-        "Startups move fast and ambiguity is everywhere. Describe a time you had to ship under significant uncertainty. "
-        "How did you decide what "
-        "to do first and what was the result?"
-    ),
-    "finance/banking": (
-        "In finance we balance precision and risk. Share a time when compliance or risk constraints forced you to redesign your solution. "
-        "What did you learn?"
-    ),
-    "healthcare": (
-        "Healthcare demands reliability. Tell me about a feature where patient or customer trust was on the line. "
-        "How did you safeguard quality?"
-    ),
-    "education": (
-        "Education products hinge on learner success. Describe an initiative where you improved outcomes for end users. "
-        "What data informed your decisions?"
-    ),
-    "gaming": (
-        "Games thrive on engagement. Talk me through a moment where player feedback shaped your roadmap. "
-        "How did you incorporate it?"
-    ),
-}
-
-
+# --- 2. Data Models ---
 class CandidateProfile(BaseModel):
-    role: Optional[str] = ""
-    experience: Optional[str] = ""
-    company: Optional[str] = ""
-    skills: Optional[str] = ""
-    focus: Optional[str] = ""
-    industry: Optional[str] = ""
-
+    role: Optional[str] = "Software Engineer"
+    experience: Optional[str] = "Junior"
+    company: Optional[str] = "Tech Corp"
+    skills: Optional[str] = "Python"
+    focus: Optional[str] = "Backend"
+    industry: Optional[str] = "Software"
 
 class StartInterviewRequest(BaseModel):
     profile: CandidateProfile
-
 
 class StartInterviewResponse(BaseModel):
     sessionId: str
@@ -106,13 +43,10 @@ class StartInterviewResponse(BaseModel):
     phase: str
     done: bool = False
 
-
 class MessageRequest(BaseModel):
     session_id: str = Field(..., alias="sessionId")
     message: str
-
     model_config = ConfigDict(populate_by_name=True)
-
 
 class MessageResponse(BaseModel):
     sessionId: str
@@ -120,14 +54,11 @@ class MessageResponse(BaseModel):
     phase: str
     done: bool = False
 
-
 class FinalizeInterviewRequest(BaseModel):
     session_id: str = Field(..., alias="sessionId")
     completion_reason: Optional[str] = Field(default=None, alias="completionReason")
     duration_seconds: Optional[int] = Field(default=None, alias="durationSeconds")
-
     model_config = ConfigDict(populate_by_name=True)
-
 
 class FinalizeInterviewResponse(BaseModel):
     sessionId: str
@@ -135,8 +66,8 @@ class FinalizeInterviewResponse(BaseModel):
     company: Optional[str] = ""
     score: float
     summary: str
-    strengths: List[str]
-    improvements: List[str]
+    strengths: List[str] = Field(default_factory=list)
+    improvements: List[str] = Field(default_factory=list)
     completionReason: str
     durationSeconds: int
     totalQuestions: int
@@ -144,335 +75,215 @@ class FinalizeInterviewResponse(BaseModel):
     skillsCovered: List[str] = Field(default_factory=list)
     requirementsSummary: str = ""
 
-
-def _compose_requirements(profile: CandidateProfile, skills: List[str]) -> str:
-    fragments: List[str] = []
-    if profile.role:
-        fragments.append(profile.role)
-    if profile.focus:
-        fragments.append(profile.focus)
-    if skills:
-        if len(skills) == 1:
-            fragments.append(skills[0])
-        elif len(skills) == 2:
-            fragments.append(" and ".join(skills))
-        else:
-            fragments.append(", ".join(skills[:-1]) + f", and {skills[-1]}")
-    if profile.industry:
-        fragments.append(f"experience in {profile.industry}")
-    if not fragments:
-        return "core problem-solving and collaboration"
-    return ", ".join(fragments)
-
+# --- 3. Interview Logic ---
 
 class InterviewSession:
-    """Lightweight rule-based interview planner that tailors questions to the profile."""
-
     def __init__(self, profile: CandidateProfile):
         self.profile = profile
         self.session_id = str(uuid4())
-        self.history: List[Dict[str, str]] = []
-        self.phase = "introduction"
-        self.step_index = 0
-        self.skills = _split_skills(profile.skills)
-        self.skills = self.skills[:3]  # keep the conversation focused
-        self.requirements_summary = _compose_requirements(profile, self.skills)
-        self.behavioral_key = profile.industry.lower() if profile.industry else ""
-        self.complete = False
-        self.plan = self._build_plan()
         self.started_at = datetime.utcnow()
+        self.message_count = 0
+        self.local_history: List[Dict[str, str]] = []
 
-    def _build_plan(self) -> List[Tuple[str, Callable[[Optional[str]], str]]]:
-        plan: List[Tuple[str, Callable[[Optional[str]], str]]] = []
-        plan.append(("introduction", self._intro_question))
-        plan.append(("technical-basic", self._experience_probe))
+        # --- BUILD THE PERSONA ---
+        # We inject the specific profile details here.
+        system_instruction = f"""
+        ROLE: You are a professional Technical Interviewer for the company '{self.profile.company}'.
+        YOUR GOAL: Assess the candidate for the role of '{self.profile.role}' ({self.profile.experience} level).
+        
+        INTERVIEW CONTEXT:
+        - Industry: {self.profile.industry}
+        - Focus Area: {self.profile.focus}
+        - Required Skills: {self.profile.skills}
 
-        for index, skill in enumerate(self.skills):
-            phase = "technical-intermediate" if index == 0 else "technical-advanced"
-            plan.append((phase, self._skill_question_factory(skill, index)))
+        STRICT RULES:
+        1. **ACT AS THE INTERVIEWER**: Do NOT be a helpful assistant. Do not say "How can I help you?". You are leading this meeting.
+        2. **ONE QUESTION AT A TIME**: Ask exactly one question per turn. Wait for the answer.
+        3. **VERIFY ANSWERS**: 
+           - If the answer is good, briefly acknowledge it and move to the next topic.
+           - If the answer is vague, ask a follow-up: "Could you be more specific about...?"
+           - If the answer is wrong, politely correct them and ask them to try again or move on.
+        4. **PROGRESSION**:
+           - Start with an Introduction (ask them to introduce themselves).
+           - Move to 2-3 Technical Questions based on {self.profile.skills}.
+           - Ask 1 Behavioral Question (e.g., "Tell me about a time you failed...").
+           - Close the interview.
+        5. **ENDING**: When the interview is done (approx 5-7 turns), output exactly: [INTERVIEW_COMPLETE]
+        """
 
-        if self.profile.focus:
-            plan.append(("technical-advanced", self._focus_question))
-        else:
-            plan.append(("technical-advanced", self._scenario_question))
+        # Initialize Chat with System Instruction
+        self.chat = client.chats.create(
+            model=MODEL_NAME,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7, # Add some creativity but keep it focused
+            )
+        )
 
-        plan.append(("behavioral", self._behavioral_question))
-        plan.append(("closing", self._closing_prompt))
-        return plan
+    def start(self) -> str:
+        """
+        Triggers the first message from the AI.
+        """
+        # We send a hidden "trigger" message to get the AI to introduce itself.
+        # This message is NOT recorded in the history shown to the user.
+        trigger_msg = f"Hello, I am the candidate. I am ready for my {self.profile.role} interview."
+        
+        try:
+            response = self.chat.send_message(trigger_msg)
+            ai_message = response.text
+        except Exception as e:
+            print(f"Gemini Start Error: {e}")
+            ai_message = f"Hello. I am the interviewer for {self.profile.company}. Shall we begin?"
 
-    def _add_history(self, role: str, message: str, phase: Optional[str] = None) -> None:
-        entry = {
+        self._record("ai", ai_message)
+        return ai_message
+
+    def next_turn(self, user_message: str) -> (str, bool):
+        self._record("user", user_message)
+        
+        try:
+            response = self.chat.send_message(user_message)
+            ai_text = response.text
+        except Exception as e:
+            print(f"Gemini Chat Error: {e}")
+            return "I'm having trouble parsing that. Could you rephrase?", False
+
+        self._record("ai", ai_text)
+
+        is_done = "[INTERVIEW_COMPLETE]" in ai_text
+        clean_text = ai_text.replace("[INTERVIEW_COMPLETE]", "").strip()
+        
+        return clean_text, is_done
+
+    def _record(self, role: str, text: str):
+        self.local_history.append({
             "role": role,
-            "message": message,
-            "timestamp": datetime.utcnow().isoformat(),
-            "phase": phase or self.phase,
-        }
-        self.history.append(entry)
+            "message": text,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        if role == "ai":
+            self.message_count += 1
 
-    def record_user_message(self, message: str) -> None:
-        self._add_history("user", message)
+    def generate_evaluation(self, duration_seconds: int) -> Dict:
+        # Build transcript
+        transcript = "\n".join([
+            f"{entry['role'].upper()}: {entry['message']}" 
+            for entry in self.local_history 
+            if entry['role'] in ['user', 'ai']
+        ])
 
-    def next_ai_turn(self, latest_user_message: Optional[str] = None) -> Tuple[str, str, bool]:
-        if self.complete:
-            follow_up = self._post_closing_ack(latest_user_message)
-            self._add_history("ai", follow_up, phase="closing")
-            return follow_up, "closing", True
+        prompt = f"""
+        Analyze this interview transcript and output a JSON object and Give a very very strict marking.
+        
+        TRANSCRIPT:
+        {transcript}
 
-        if self.step_index >= len(self.plan):
-            self.complete = True
-            return self.next_ai_turn(latest_user_message)
+        REQUIRED JSON FORMAT:
+        {{
+            "score": <float 1-10 based on technical accuracy and communication>,
+            "summary": "<2-3 sentence summary of the candidate's performance>",
+            "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+            "improvements": ["<improvement 1>", "<improvement 2>", "<improvement 3>"],
+            "skillsCovered": ["<skill 1>", "<skill 2>"],
+            "requirementsSummary": "Candidate assessed for {self.profile.role}."
+        }}
+        Output raw JSON only (no markdown).
+        """
 
-        phase, builder = self.plan[self.step_index]
-        self.phase = phase
-        message = builder(latest_user_message)
-
-        self._add_history("ai", message)
-        self.step_index += 1
-
-        if self.step_index >= len(self.plan):
-            self.complete = True
-
-        return message, phase, self.complete
-
-    # Evaluation helpers -------------------------------------------------
-
-    def _count_turns(self) -> Tuple[int, int]:
-        user_turns = [entry for entry in self.history if entry["role"] == "user"]
-        ai_turns = [entry for entry in self.history if entry["role"] == "ai"]
-        return len(ai_turns), len(user_turns)
-
-    def _average_response_length(self) -> float:
-        user_turns = [entry for entry in self.history if entry["role"] == "user"]
-        if not user_turns:
-            return 0.0
-        total_chars = sum(len(turn["message"]) for turn in user_turns)
-        return total_chars / len(user_turns)
-
-    def _coverage_ratio(self) -> float:
-        if not self.plan:
-            return 0.0
-        covered_phases = {entry["phase"] for entry in self.history if entry["role"] == "ai" and entry.get("phase")}
-        return min(1.0, len(covered_phases) / len(self.plan))
-
-    def generate_evaluation(self, completion_reason: Optional[str], duration_seconds: Optional[int]) -> Dict[str, object]:
-        total_questions, total_responses = self._count_turns()
-        avg_length = self._average_response_length()
-        coverage = self._coverage_ratio()
-
-        # Scoring heuristics: participation, depth, coverage
-        participation_score = min(1.0, total_responses / max(4, len(self.plan)))
-        depth_score = min(1.0, avg_length / 240.0)
-        coverage_score = coverage
-
-        raw_score = 4.0 + (participation_score * 3.5) + (depth_score * 1.5) + (coverage_score * 1.0)
-        score = max(1.0, min(10.0, round(raw_score, 1)))
-
-        strengths: List[str] = []
-        improvements: List[str] = []
-
-        if total_responses >= 4:
-            strengths.append("Consistently responded to the interviewer prompts.")
-        if avg_length >= 140:
-            strengths.append("Provided detailed, narrative-style answers with strong context.")
-        elif avg_length >= 90:
-            strengths.append("Demonstrated concise explanations with relevant examples.")
-
-        if coverage >= 0.8:
-            strengths.append("Covered most of the planned interview topics.")
-
-        if total_responses <= 2:
-            improvements.append("Increase the number of follow-up details to show fuller ownership of outcomes.")
-        if avg_length < 80:
-            improvements.append("Expand answers with specifics—mention stakeholders, metrics, or tools used.")
-        if coverage < 0.6:
-            improvements.append("Aim to progress through more of the interview agenda by keeping answers focused.")
-
-        if not improvements:
-            improvements.append("Consider closing answers with explicit results or key takeaways to reinforce impact.")
-
-        summary_parts = [
-            f"You answered {total_responses} of {max(total_questions, total_responses)} prompts",
-            f"covering about {int(coverage * 100)}% of the planned topics",
-        ]
-        if avg_length:
-            summary_parts.append(f"with an average answer length of {int(avg_length)} characters")
-        summary = " ".join(summary_parts) + "."
-
-        computed_duration = duration_seconds or int(max((datetime.utcnow() - self.started_at).total_seconds(), 0))
-
-        return {
-            "sessionId": self.session_id,
-            "role": self.profile.role or "",
-            "company": self.profile.company or "",
-            "score": score,
-            "summary": summary,
-            "strengths": strengths,
-            "improvements": improvements,
-            "completionReason": completion_reason or "unknown",
-            "durationSeconds": computed_duration,
-            "totalQuestions": total_questions,
-            "totalResponses": total_responses,
-            "skillsCovered": self.skills,
-            "requirementsSummary": self.requirements_summary,
-        }
-
-    # Question builders -------------------------------------------------
-
-    def _intro_question(self, _: Optional[str]) -> str:
-        role = self.profile.role or "this role"
-        company = self.profile.company or "the team"
-        level = EXPERIENCE_LABELS.get(self.profile.experience or "", "professional")
-        return (
-            f"Hi there! I'm the AI interviewer for the {role} opportunity at {company}. "
-            f"To get us started, could you give me a quick overview of your background as {level} "
-            f"and what draws you to this position?"
-        )
-
-    def _experience_probe(self, latest_user_message: Optional[str]) -> str:
-        primary_skill = self.skills[0] if self.skills else "the core technologies in this role"
-        template = EXPERIENCE_PROMPTS.get(
-            (self.profile.experience or "").lower(),
-            (
-                "Tell me about a recent piece of work where you delivered strong results with {primary_skill}. "
-                "What made it challenging and how did you measure impact?"
-            ),
-        )
-        return template.format(primary_skill=primary_skill)
-
-    def _skill_question_factory(self, skill: str, index: int):
-        skill_name = skill
-
-        def _question(_: Optional[str]) -> str:
-            requirement = self.requirements_summary
-            depth_prompt = (
-                "At this stage I'd like to go deeper into how you operate when the constraints get tight."
-                if index > 0
-                else "Let's connect your experience to what we need on this team."
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
             )
-            return (
-                f"This {self.profile.role or 'role'} depends heavily on {skill_name}. {depth_prompt} "
-                f"Can you describe a moment where {skill_name} was essential and how you ensured the work aligned with {requirement}?"
-            )
+            text = response.text.strip()
+            
+            # Cleanup markdown if present
+            if text.startswith("```"):
+                text = re.sub(r"^```json|^```", "", text).strip()
+            if text.endswith("```"):
+                text = text[:-3].strip()
 
-        return _question
+            return json.loads(text)
+        except Exception as e:
+            print(f"Evaluation Error: {e}")
+            return {
+                "score": 0.0,
+                "summary": "Evaluation failed.",
+                "strengths": [],
+                "improvements": [],
+                "skillsCovered": [],
+                "requirementsSummary": "Error"
+            }
 
-    def _focus_question(self, latest_user_message: Optional[str]) -> str:
-        focus_area = self.profile.focus
-        return (
-            f"You mentioned a focus on {focus_area}. Suppose we're planning the next quarter and need a roadmap that strengthens our {focus_area.lower()} capabilities. "
-            f"How would you evaluate what to build, and what signals would you watch during delivery?"
-        )
+# --- 4. API Endpoints ---
 
-    def _scenario_question(self, latest_user_message: Optional[str]) -> str:
-        role = self.profile.role or "this"
-        return (
-            f"Imagine you join as our {role}. On day one you discover the codebase hasn't kept pace with the current requirements around {self.requirements_summary}. "
-            f"What first steps would you take in the opening weeks to build context and start improvements?"
-        )
-
-    def _behavioral_question(self, latest_user_message: Optional[str]) -> str:
-        key = self.behavioral_key
-        prompt = BEHAVIORAL_PROMPTS.get(key, BEHAVIORAL_PROMPTS["default"])
-        return prompt
-
-    def _closing_prompt(self, latest_user_message: Optional[str]) -> str:
-        company = self.profile.company or "our team"
-        return (
-            f"Thanks for your thoughtful responses. Before we wrap, what questions do you have for {company} or about the way we approach {self.requirements_summary}?"
-        )
-
-    def _post_closing_ack(self, latest_user_message: Optional[str]) -> str:
-        return (
-            "I appreciate the conversation today. We'll review everything in detail and follow up with next steps soon. "
-            "Feel free to reach out if anything else comes to mind."
-        )
-
-
-# ---------------------------------------------------------------------
-# FastAPI application setup
-
-app = FastAPI(title="AI Interview Service", version="0.1.0")
-
-allowed_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
+app = FastAPI(title="AI Interviewer", version="3.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins or ["*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 _sessions: Dict[str, InterviewSession] = {}
 
-
 @app.get("/api/health")
-def health_check() -> Dict[str, str]:
-    return {"status": "ok", "service": "fastapi-interview"}
-
+def health():
+    return {"status": "ok", "model": MODEL_NAME}
 
 @app.post("/api/interview/start", response_model=StartInterviewResponse)
-def start_interview(payload: StartInterviewRequest) -> StartInterviewResponse:
+def start_interview(payload: StartInterviewRequest):
     session = InterviewSession(payload.profile)
-    opening_message, phase, done = session.next_ai_turn()
-
+    msg = session.start()
     _sessions[session.session_id] = session
-
     return StartInterviewResponse(
         sessionId=session.session_id,
-        message=opening_message,
-        phase=phase,
-        done=done,
+        message=msg,
+        phase="interview",
+        done=False
     )
-
 
 @app.post("/api/interview/message", response_model=MessageResponse)
-def continue_interview(payload: MessageRequest) -> MessageResponse:
+def message(payload: MessageRequest):
     session = _sessions.get(payload.session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Interview session not found")
-
-    user_message = payload.message.strip()
-    if not user_message:
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
-
-    session.record_user_message(user_message)
-    ai_message, phase, done = session.next_ai_turn(user_message)
-
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    ai_msg, done = session.next_turn(payload.message)
+    
     return MessageResponse(
         sessionId=session.session_id,
-        message=ai_message,
-        phase=phase,
-        done=done,
+        message=ai_msg,
+        phase="interview",
+        done=done
     )
-
-
-@app.delete("/api/interview/{session_id}")
-def end_interview(session_id: str) -> Dict[str, str]:
-    if session_id in _sessions:
-        del _sessions[session_id]
-    return {"status": "ended", "sessionId": session_id}
-
 
 @app.post("/api/interview/finalize", response_model=FinalizeInterviewResponse)
-def finalize_interview(payload: FinalizeInterviewRequest) -> FinalizeInterviewResponse:
+def finalize(payload: FinalizeInterviewRequest):
     session = _sessions.get(payload.session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Interview session not found")
-
-    evaluation = session.generate_evaluation(payload.completion_reason, payload.duration_seconds)
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    duration = payload.duration_seconds or 0
+    eval_data = session.generate_evaluation(duration)
     del _sessions[payload.session_id]
-
-    return FinalizeInterviewResponse(**evaluation)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    import uvicorn
-
-    uvicorn.run(
-        "main:app",
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
-        reload=True,
+    
+    return FinalizeInterviewResponse(
+        sessionId=payload.session_id,
+        role=session.profile.role,
+        company=session.profile.company,
+        completionReason=payload.completion_reason or "done",
+        durationSeconds=duration,
+        totalQuestions=session.message_count,
+        totalResponses=session.message_count,
+        **eval_data
     )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
