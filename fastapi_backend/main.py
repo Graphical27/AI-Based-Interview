@@ -106,7 +106,7 @@ class InterviewSession:
         3. **VERIFY ANSWERS**: 
            - If the answer is good, briefly acknowledge it and move to the next topic.
            - If the answer is vague, ask a follow-up: "Could you be more specific about...?"
-           - If the answer is wrong, politely correct them and ask them to try again or move on.
+           - If the answer is wrong, state that it is incorrect. Ask if they want to retry, or if they want you to provide the correct answer.
         4. **PROGRESSION**:
            - Start with an Introduction (ask them to introduce themselves).
            - Move to 2-3 Technical Questions based on {self.profile.skills}.
