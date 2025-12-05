@@ -54,6 +54,22 @@ export const finalizeInterviewSession = (sessionId, payload = {}) => {
   });
 };
 
+export const getTTS = async (text) => {
+  const url = `${BASE_URL}/tts`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ text })
+  });
+
+  if (!response.ok) {
+    throw new Error('TTS request failed');
+  }
+  return response.blob();
+};
+
 async function del(path) {
   const url = `${BASE_URL}${path}`;
   let response;

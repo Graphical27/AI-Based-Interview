@@ -11,7 +11,11 @@ from google.genai import types
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
+import edge_tts
+import tempfile
+
 
 # --- 1. Setup & Configuration ---
 load_dotenv()
@@ -283,6 +287,26 @@ def finalize(payload: FinalizeInterviewRequest):
         totalResponses=session.message_count,
         **eval_data
     )
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "en-US-EmmaMultilingualNeural"
+
+@app.post("/api/tts")
+async def generate_tts(payload: TTSRequest):
+    try:
+        voice = payload.voice
+        if "Journey" in voice: 
+             voice = "en-US-EmmaMultilingualNeural"
+             
+        communicate = edge_tts.Communicate(payload.text, voice)
+        filename = f"tts_{uuid4()}.mp3"
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+        await communicate.save(filepath)
+        return FileResponse(filepath, media_type="audio/mpeg", filename="speech.mp3")
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

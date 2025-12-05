@@ -91,19 +91,23 @@ const PreInterviewSetup = ({ onStartInterview, isInitializing = false, defaultPr
             clearInterval(countdownTimerRef.current);
             countdownTimerRef.current = null;
           }
-
-          Promise.resolve(onStartInterview(profilePayload)).catch((err) => {
-            const message = err?.message || 'Unable to start the interview. Please try again.';
-            setError(message);
-            setIsStarting(false);
-            setCountdown(3);
-          });
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
   };
+
+  useEffect(() => {
+    if (countdown === 0 && isStarting) {
+      Promise.resolve(onStartInterview(profilePayload)).catch((err) => {
+        const message = err?.message || 'Unable to start the interview. Please try again.';
+        setError(message);
+        setIsStarting(false);
+        setCountdown(3);
+      });
+    }
+  }, [countdown, isStarting, onStartInterview, profilePayload]);
 
   if (isStarting) {
     return (

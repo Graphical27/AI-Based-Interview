@@ -5,7 +5,7 @@ import VoiceRecorder from './VoiceRecorder';
 import ChatInterface from './ChatInterface';
 import TypingAnimation from './TypingAnimation';
 import PreInterviewSetup from './PreInterviewSetup';
-import { startInterviewSession, sendInterviewMessage, endInterviewSession, finalizeInterviewSession } from '../../services/interviewApi';
+import { startInterviewSession, sendInterviewMessage, endInterviewSession, finalizeInterviewSession, getTTS } from '../../services/interviewApi';
 import { api } from '../../services/api';
 import './InterviewPage.css';
 
@@ -124,6 +124,7 @@ const InterviewPage = () => {
   const [finalizationStatus, setFinalizationStatus] = useState('idle');
   const [finalizationError, setFinalizationError] = useState('');
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [audioElement, setAudioElement] = useState(null);
   
   const messagesEndRef = useRef(null);
   const timerNotifiedRef = useRef(false);
@@ -159,93 +160,57 @@ const InterviewPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const speakText = (text) => {
+  const speakText = async (text) => {
+    if (!text) return;
+
+    // Stop existing speech
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+    }
     if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
       speechSynthesis.cancel();
+    }
+
+    try {
+      const blob = await getTTS(text);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
       
-      const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Enhanced voice settings for more natural speech
-      utterance.rate = 0.85; // Slightly slower for clarity
-      utterance.pitch = 1.1; // Slightly higher pitch for friendliness
-      utterance.volume = 0.9; // Good volume level
-      
-      // Function to find the best available voice
-      const findBestVoice = () => {
-        const voices = speechSynthesis.getVoices();
-        
-        // Priority order for more natural voices
-        const preferredVoices = [
-          // Google voices (very natural)
-          'Google UK English Female',
-          'Google UK English Male', 
-          'Google US English Female',
-          'Google US English Male',
-          // Microsoft voices (natural sounding)
-          'Microsoft Zira - English (United States)',
-          'Microsoft David - English (United States)',
-          'Microsoft Hazel - English (Great Britain)',
-          'Microsoft Susan - English (Great Britain)',
-          // Samantha (Mac - very natural)
-          'Samantha',
-          'Alex',
-          // Fallback to any English voice
-          ...voices.filter(voice => voice.lang.includes('en')),
-        ];
-
-        // Find the first available preferred voice
-        for (const preferred of preferredVoices) {
-          const voice = voices.find(v => 
-            v.name.includes(preferred) || 
-            v.name === preferred
-          );
-          if (voice) return voice;
-        }
-
-        // Enhanced fallback - prefer female voices as they often sound more natural
-        const femaleVoice = voices.find(voice => 
-          voice.lang.includes('en') && 
-          (voice.name.toLowerCase().includes('female') || 
-           voice.name.toLowerCase().includes('woman') ||
-           voice.name.includes('Zira') ||
-           voice.name.includes('Hazel') ||
-           voice.name.includes('Samantha'))
-        );
-        
-        if (femaleVoice) return femaleVoice;
-        
-        // Final fallback to any English voice
-        return voices.find(voice => voice.lang.includes('en')) || voices[0];
-      };
-
-      // Wait for voices to load if not already loaded
-      if (speechSynthesis.getVoices().length === 0) {
-        speechSynthesis.onvoiceschanged = () => {
-          const voice = findBestVoice();
-          if (voice) {
-            utterance.voice = voice;
-            console.log(`Using voice: ${voice.name} (${voice.lang})`);
-          }
-          speechSynthesis.speak(utterance);
-        };
-      } else {
-        const voice = findBestVoice();
-        if (voice) {
-          utterance.voice = voice;
-          console.log(`Using voice: ${voice.name} (${voice.lang})`);
-        }
-        speechSynthesis.speak(utterance);
-      }
-
-      // Add pauses for more natural speech
-      utterance.onend = () => {
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
         console.log('Speech finished');
       };
-
-      utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event.error);
+      
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
       };
+
+      setAudioElement(audio);
+      await audio.play();
+
+    } catch (error) {
+      console.error('TTS Error, falling back to browser TTS:', error);
+      // Fallback to browser TTS
+      if ('speechSynthesis' in window) {
+         const utterance = new SpeechSynthesisUtterance(text);
+         // Enhanced voice settings for more natural speech
+         utterance.rate = 0.9; 
+         utterance.pitch = 1.0;
+         
+         const voices = speechSynthesis.getVoices();
+         const femaleVoice = voices.find(voice => 
+            voice.lang.includes('en') && 
+            (voice.name.toLowerCase().includes('female') || 
+             voice.name.toLowerCase().includes('woman') ||
+             voice.name.includes('Zira') ||
+             voice.name.includes('Samantha'))
+          );
+          
+          if (femaleVoice) utterance.voice = femaleVoice;
+          
+         speechSynthesis.speak(utterance);
+      }
     }
   };
 
