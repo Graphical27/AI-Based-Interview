@@ -1,15 +1,11 @@
-import React from 'react';
-import './ChatInterface.css';
+import React, { useContext } from 'react';
+import { ThemeContext } from '../../contexts/ThemeContext';
 
 const ChatInterface = ({ 
   messages, 
-  currentMessage, 
-  setCurrentMessage, 
-  onSendMessage, 
-  messagesEndRef,
-  disabled = false,
-  completionReason = ''
+  messagesEndRef
 }) => {
+  const { theme } = useContext(ThemeContext);
   
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString([], { 
@@ -18,90 +14,45 @@ const ChatInterface = ({
     });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (disabled || !currentMessage.trim()) {
-      return;
-    }
-    Promise.resolve(onSendMessage(currentMessage.trim())).catch(() => {
-      // Errors handled upstream; swallow promise rejection to avoid console noise
-    });
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
-
   return (
-    <div className="chat-interface">
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Messages Container */}
-      <div className="messages-container">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
         {messages.length === 0 && (
-          <div className="welcome-message">
-            <div className="ai-avatar large">AI</div>
-            <h3>Interview Starting...</h3>
-            <p>Your personalized AI interview is about to begin. The AI will ask progressively challenging questions based on your profile.</p>
+          <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-60">
+            <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${theme.orb1} flex items-center justify-center text-2xl font-bold shadow-lg animate-pulse`}>AI</div>
+            <h3 className={`text-xl font-semibold ${theme.text}`}>Interview Starting...</h3>
+            <p className={`max-w-md ${theme.textMuted}`}>Your personalized AI interview is about to begin. The AI will ask progressively challenging questions based on your profile.</p>
           </div>
         )}
         
         {messages.map((message) => (
-          <div key={message.id} className={`message ${message.role}-message`}>
-            <div className={`${message.role}-avatar`}>
+          <div key={message.id} className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-lg ${
+              message.role === 'ai' 
+                ? `bg-gradient-to-br ${theme.orb1} text-white` 
+                : `bg-gradient-to-br ${theme.orb2} text-white`
+            }`}>
               {message.role === 'ai' ? 'AI' : 'YOU'}
             </div>
-            <div className="message-content">
-              <div className={`message-bubble ${message.role}-bubble`}>
-                <p>{message.message}</p>
+            
+            <div className={`flex flex-col max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+              <div className={`px-5 py-3 rounded-2xl shadow-sm ${
+                message.role === 'ai' 
+                  ? `${theme.glassPanel} border ${theme.border} rounded-tl-none` 
+                  : `bg-gradient-to-r ${theme.accent} text-white rounded-tr-none`
+              }`}>
+                <p className="whitespace-pre-wrap leading-relaxed text-lg">{message.message}</p>
               </div>
-              <div className="message-time">
+              <span className={`text-xs mt-1 px-1 ${theme.textMuted}`}>
                 {formatTime(message.timestamp)}
-              </div>
+              </span>
             </div>
           </div>
         ))}
         
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Input Section */}
-      <form onSubmit={handleSubmit} className="message-input-form">
-        <div className="input-container">
-          <textarea
-            value={currentMessage}
-            onChange={(e) => setCurrentMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={disabled
-              ? completionReason === 'user-quit'
-                ? 'You ended this interview. Head back to the job board to start again.'
-                : completionReason === 'time-expired'
-                  ? 'Time is up. Review the transcript or close the session when ready.'
-                  : 'Interview complete. No further responses are required.'
-              : 'Type your response here... You can type or use the microphone above to speak your answer.'
-            }
-            className="message-input"
-            rows="3"
-            disabled={disabled}
-          />
-          <button 
-            type="submit" 
-            className="send-button"
-            disabled={!currentMessage.trim() || disabled}
-            title="Send Message (Enter)"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-            </svg>
-          </button>
-        </div>
-        <div className="input-help-text">
-          <span className="input-tip">
-            💡 <strong>Tip:</strong> You can type here anytime, even if you prefer not to use the microphone. Press <kbd>Enter</kbd> to send, or <kbd>Shift+Enter</kbd> for new line.
-          </span>
-        </div>
-      </form>
     </div>
   );
 };

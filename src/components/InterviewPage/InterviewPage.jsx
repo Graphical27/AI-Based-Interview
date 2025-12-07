@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ThemeContext } from '../../contexts/ThemeContext';
 import WebcamCapture from './WebcamCapture';
 import VoiceRecorder from './VoiceRecorder';
 import ChatInterface from './ChatInterface';
 import TypingAnimation from './TypingAnimation';
 import PreInterviewSetup from './PreInterviewSetup';
+import InterviewResultPage from './InterviewResultPage';
 import { startInterviewSession, sendInterviewMessage, endInterviewSession, finalizeInterviewSession, getTTS } from '../../services/interviewApi';
 import { api } from '../../services/api';
-import './InterviewPage.css';
 
 const EXPERIENCE_LEVEL_RULES = [
   { key: 'lead', patterns: ['lead', 'principal', 'architect', 'head of'] },
@@ -81,6 +82,7 @@ const withTimeout = (promise, timeoutMs, timeoutMessage) => {
 };
 
 const InterviewPage = () => {
+  const { theme } = useContext(ThemeContext);
   const location = useLocation();
   const navigate = useNavigate();
   const jobContext = location.state?.job || null;
@@ -296,503 +298,343 @@ const InterviewPage = () => {
 
       setMessages(prev => [...prev, aiMessage]);
       setInterviewPhase(response.phase);
-      setIsInterviewComplete(Boolean(response.done));
+      
       if (response.done) {
-        setCompletionReason(prev => prev || 'agent-complete');
+        setIsInterviewComplete(true);
+        setTimerActive(false);
+        setCompletionReason('Interview completed successfully.');
+        handleFinalizeSession();
       }
 
       if (isSpeechEnabled) {
         speakText(response.message);
       }
     } catch (err) {
-      console.error('Failed to send interview message', err);
-      setError(err.message || 'Unable to process your response. Please try again.');
+      console.error('Failed to send message', err);
+      setError('Failed to send message. Please try again.');
     } finally {
       setIsAiTyping(false);
     }
   };
 
-  useEffect(() => {
-    if (!timerActive || isInterviewComplete) {
+  const handleFinalizeSession = async () => {
+    if (finalizationGuardRef.current !== 'idle') {
       return;
     }
-
-    const interval = setInterval(() => {
-      setRemainingSeconds(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setIsInterviewComplete(true);
-          setTimerActive(false);
-          setCompletionReason(prevReason => prevReason || 'time-expired');
-          if (!timerNotifiedRef.current) {
-            timerNotifiedRef.current = true;
-            setMessages(prevMessages => {
-              const alreadyLogged = prevMessages.some(msg => msg.meta === 'timer-expired');
-              if (alreadyLogged) {
-                return prevMessages;
-              }
-              return [...prevMessages, {
-                id: `system-${Date.now()}`,
-                role: 'ai',
-                message: 'We have reached the end of the scheduled interview time. Thank you for your responses!',
-                timestamp: new Date(),
-                phase: 'closing',
-                meta: 'timer-expired'
-              }];
-            });
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [timerActive, isInterviewComplete]);
-
-  useEffect(() => {
-    if (isInterviewComplete) {
-      setTimerActive(false);
-    }
-  }, [isInterviewComplete]);
-
-  useEffect(() => {
-    if (!isInterviewComplete || !sessionId) {
-      return;
-    }
-
-    const reason = completionReason || 'agent-complete';
-
-    if (finalizationGuardRef.current === 'pending' || finalizationGuardRef.current === 'succeeded') {
-      return;
-    }
-
-    if (finalizationStatus !== 'idle') {
-      return;
-    }
-
-    finalizationGuardRef.current = 'pending';
-    setFinalizationStatus('pending');
-    setFinalizationError('');
+    
+    finalizationGuardRef.current = 'processing';
     setIsFinalizing(true);
+    setFinalizationStatus('processing');
+    setFinalizationError('');
 
-    const elapsedSeconds = interviewStartTimestampRef.current
-      ? Math.max(0, Math.round((Date.now() - interviewStartTimestampRef.current) / 1000))
-      : Math.max(0, (defaultDurationMinutes * 60) - remainingSeconds);
-
-    const runFinalization = async () => {
-      try {
-        const evaluation = await withTimeout(
-          finalizeInterviewSession(sessionId, {
-            completionReason: reason,
-            durationSeconds: elapsedSeconds,
-          }),
-          15000,
-          'The AI feedback is taking longer than expected. Please try again.'
-        );
-
-        let persistenceErrorMessage = '';
+    try {
+      const result = await finalizeInterviewSession(sessionId);
+      
+      if (componentMountedRef.current) {
+        setFinalizationStatus('success');
+        finalizationGuardRef.current = 'success';
+        
+        // If we have an application ID, update its status
         if (applicationId) {
           try {
-            await withTimeout(
-              api.saveInterviewResult(applicationId, {
-                score: evaluation.score,
-                summary: evaluation.summary,
-                strengths: evaluation.strengths,
-                improvements: evaluation.improvements,
-                completionReason: evaluation.completionReason,
-                durationSeconds: evaluation.durationSeconds,
-                totalQuestions: evaluation.totalQuestions,
-                totalResponses: evaluation.totalResponses,
-                skillsCovered: evaluation.skillsCovered,
-                requirementsSummary: evaluation.requirementsSummary,
-              }),
-              12000,
-              'Saved locally, but the dashboard did not confirm in time.'
-            );
-          } catch (persistErr) {
-            console.error('Failed to persist interview result', persistErr);
-            persistenceErrorMessage = persistErr?.message || 'Interview summary saved locally, but not stored to your profile.';
+            await api.put(`/applications/${applicationId}/status`, { 
+              status: 'interview_completed',
+              interviewScore: result.score || 0
+            });
+          } catch (appErr) {
+            console.error('Failed to update application status:', appErr);
+            // Non-blocking error
           }
         }
 
-        finalizationGuardRef.current = 'succeeded';
-        if (!componentMountedRef.current) {
-          return;
-        }
-        setFinalizationStatus('succeeded');
-        sessionTerminationRef.current = true;
-
-        navigate('/interview/results', {
-          replace: true,
-          state: {
-            evaluation,
+        // Navigate to results page with data
+        navigate('/interview/results', { 
+          state: { 
+            evaluation: result,
             job: jobContext,
-            applicationId,
-            completionReason: evaluation.completionReason,
-            persistenceError: persistenceErrorMessage,
-          },
+            applicationId: applicationId
+          } 
         });
+      }
+    } catch (err) {
+      console.error('Failed to finalize session:', err);
+      if (componentMountedRef.current) {
+        setFinalizationStatus('error');
+        setFinalizationError(err.message || 'Failed to generate interview report.');
+        finalizationGuardRef.current = 'error';
+      }
+    } finally {
+      if (componentMountedRef.current) {
+        setIsFinalizing(false);
+      }
+    }
+  };
+
+  const handleEndInterview = async () => {
+    if (!sessionId || isInterviewComplete) return;
+
+    if (window.confirm('Are you sure you want to end the interview early?')) {
+      try {
+        // We don't need to explicitly end the session here as finalizeInterviewSession handles it
+        // and generates the report. Calling endInterviewSession would delete it before we can finalize.
+        setIsInterviewComplete(true);
+        setTimerActive(false);
+        setCompletionReason('Interview ended by user.');
+        handleFinalizeSession();
       } catch (err) {
-        console.error('Failed to finalize interview session', err);
-        finalizationGuardRef.current = 'failed';
-        if (!componentMountedRef.current) {
-          return;
-        }
-        setFinalizationStatus('failed');
-        setFinalizationError(err?.message || 'Unable to generate your interview feedback.');
-      } finally {
-        if (componentMountedRef.current) {
-          setIsFinalizing(false);
-        }
+        console.error('Failed to end interview:', err);
+        setError('Failed to end interview properly.');
       }
-    };
+    }
+  };
 
-    runFinalization();
-  }, [isInterviewComplete, sessionId, completionReason, finalizationStatus, defaultDurationMinutes, remainingSeconds, applicationId, jobContext, navigate]);
+  const handleTranscript = (text) => {
+    setCurrentMessage(prev => (prev ? `${prev} ${text}` : text));
+  };
 
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(currentMessage);
+    }
+  };
+
+  // Timer logic
   useEffect(() => {
-    if (!isInterviewComplete || !sessionId || sessionTerminationRef.current) {
-      return;
+    let interval;
+    if (timerActive && remainingSeconds > 0) {
+      interval = setInterval(() => {
+        setRemainingSeconds(prev => {
+          const next = prev - 1;
+          
+          // Warning at 5 minutes
+          if (next === 300 && !timerNotifiedRef.current) {
+            timerNotifiedRef.current = true;
+            setMessages(prev => [...prev, {
+              id: `sys-${Date.now()}`,
+              role: 'system',
+              message: '⚠️ 5 minutes remaining in the interview.',
+              timestamp: new Date(),
+              phase: 'system'
+            }]);
+          }
+          
+          // Auto-end at 0
+          if (next <= 0 && !sessionTerminationRef.current) {
+            sessionTerminationRef.current = true;
+            setTimerActive(false);
+            setIsInterviewComplete(true);
+            setCompletionReason('Time limit reached.');
+            handleFinalizeSession();
+            return 0;
+          }
+          
+          return next;
+        });
+      }, 1000);
     }
+    return () => clearInterval(interval);
+  }, [timerActive, remainingSeconds]);
 
-    if (finalizationGuardRef.current === 'pending' || finalizationGuardRef.current === 'failed') {
-      return;
-    }
-
-    if (finalizationGuardRef.current === 'succeeded') {
-      sessionTerminationRef.current = true;
-      return;
-    }
-    sessionTerminationRef.current = true;
-    endInterviewSession(sessionId).catch((err) => {
-      console.warn('Failed to close interview session', err);
-    });
-  }, [isInterviewComplete, sessionId]);
-
-  const handleSpeechResult = (transcript) => {
-    if (transcript.trim()) {
-      sendMessage(transcript);
-    }
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const retryFinalize = () => {
-    if (finalizationGuardRef.current === 'pending') {
-      return;
-    }
-    finalizationGuardRef.current = 'idle';
-    setFinalizationStatus('idle');
-    setFinalizationError('');
-  };
-
-  const getPhaseDisplay = (phase) => {
-    const phaseMap = {
-      introduction: { text: 'Introduction', color: '#00F2C3' },
-      'technical-basic': { text: 'Basic Questions', color: '#4CAF50' },
-      'technical-intermediate': { text: 'Technical Skills', color: '#FFB84D' },
-      'technical-advanced': { text: 'Advanced Technical', color: '#FF9800' },
-      behavioral: { text: 'Behavioral Questions', color: '#FF6B9D' },
-      closing: { text: 'Interview Closing', color: '#8B5CF6' }
-    };
-    return phaseMap[phase] || phaseMap.introduction;
-  };
-
-  const phaseInfo = getPhaseDisplay(interviewPhase);
-
-  const formatTimer = (seconds) => {
-    const safeSeconds = Math.max(0, seconds | 0);
-    const minutes = Math.floor(safeSeconds / 60);
-    const secs = safeSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleQuitInterview = () => {
-    if (isInterviewComplete) {
-      return;
-    }
-
-    const confirmed = window.confirm('Are you sure you want to end this interview early?');
-    if (!confirmed) {
-      return;
-    }
-
-    speechSynthesis.cancel();
-    setIsAiTyping(false);
-    setIsRecording(false);
-    setIsListening(false);
-    setTimerActive(false);
-    setCompletionReason('user-quit');
-    setIsInterviewComplete(true);
-    setCurrentMessage('');
-    setMessages((prev) => {
-      const alreadyLogged = prev.some((msg) => msg.meta === 'user-quit');
-      if (alreadyLogged) {
-        return prev;
-      }
-      return [
-        ...prev,
-        {
-          id: `system-${Date.now()}`,
-          role: 'ai',
-          message: 'You chose to end the session early. Thanks for practicing—come back anytime for another run!',
-          timestamp: new Date(),
-          phase: 'closing',
-          meta: 'user-quit',
-        },
-      ];
-    });
-  };
-
-  if (!jobContext && !profileDefaults) {
+  // Render Logic
+  if (isInterviewComplete && finalizationStatus === 'success') {
     return (
-      <div className="interview-page interview-page--empty">
-        <div className="interview-empty-state">
-          <h1>No Interview Selected</h1>
-          <p>Please choose a role from the job board to launch an interview.</p>
-          <button onClick={() => navigate('/portal')} className="empty-state-button">
-            Return to Jobs
-          </button>
+      <div className={`min-h-screen ${theme.bg} flex items-center justify-center`}>
+        <div className="text-center">
+          <div className={`w-16 h-16 border-4 border-t-transparent ${theme.border} rounded-full animate-spin mx-auto mb-4`}></div>
+          <h2 className={`text-xl font-bold ${theme.text}`}>Generating Interview Results...</h2>
+          <p className={`mt-2 ${theme.textMuted}`}>Redirecting to feedback page...</p>
         </div>
       </div>
     );
   }
 
-  // Show pre-interview setup if interview hasn't started
   if (!interviewStarted) {
     return (
-      <PreInterviewSetup
-        onStartInterview={handleStartInterview}
-        isInitializing={isStartingSession}
-        defaultProfile={profileDefaults}
-        jobDetails={jobContext ? {
-          title: jobContext.title,
-          company: jobContext.company,
-          location: jobContext.location,
-          type: jobContext.type,
-          salary: jobContext.salary,
-          tags: Array.isArray(jobContext.tags) ? jobContext.tags : [],
-          interviewDurationMinutes: defaultDurationMinutes,
-          experienceLabel: jobContext.experience || '',
-          experienceKey,
-          industry: jobContext.industry || jobContext.category || '',
-          category: jobContext.category || '',
-        } : null}
+      <PreInterviewSetup 
+        onStart={handleStartInterview}
+        isLoading={isStartingSession}
+        error={error}
+        defaultDuration={defaultDurationMinutes}
+        jobContext={jobContext}
+        profileDefaults={profileDefaults}
       />
     );
   }
 
   return (
-    <div className="interview-page">
+    <div className={`min-h-screen ${theme.bg} ${theme.text} p-4 md:p-6 flex flex-col`}>
       {/* Header */}
-      <div className="interview-header">
-        <h1>AI Mock Interview</h1>
-        <div className="header-controls">
-          <div className="interview-phase">
-            <span 
-              className="phase-indicator" 
-              style={{ backgroundColor: phaseInfo.color }}
-            ></span>
-            <span className="phase-text">{phaseInfo.text}</span>
-          </div>
-          <div className="interview-timer" title="Remaining interview time">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path fill="currentColor" d="M15.07 1L14 2.07l1.9 1.9A8.93 8.93 0 0 0 12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7c1.1 0 2.15.24 3.07.67L13 7h6V1z"/>
+      <header className={`flex justify-between items-center mb-6 px-6 py-4 rounded-2xl ${theme.glassPanel} border ${theme.border} shadow-lg`}>
+        <div className="flex items-center gap-4">
+          <div className={`p-2 rounded-xl bg-gradient-to-br ${theme.accent}`}>
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
-            <span>{formatTimer(remainingSeconds)}</span>
           </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">AI Interview Session</h1>
+            <p className={`text-xs ${theme.textMuted} font-medium`}>
+              {jobContext ? `${jobContext.title} at ${jobContext.company}` : 'General Interview'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-xl ${theme.glassPanel} border ${theme.border}`}>
+            <div className={`w-2 h-2 rounded-full ${remainingSeconds < 300 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+            <span className={`font-mono text-lg font-bold ${remainingSeconds < 300 ? 'text-red-400' : theme.text}`}>
+              {formatTime(remainingSeconds)}
+            </span>
+          </div>
+          
           <button 
-            className={`speech-toggle ${isSpeechEnabled ? 'enabled' : 'disabled'}`}
-            onClick={() => {
-              const nextState = !isSpeechEnabled;
-              setIsSpeechEnabled(nextState);
-              if (!nextState) {
-                // Stop any ongoing speech when disabling
-                speechSynthesis.cancel();
-              }
-            }}
-            title={isSpeechEnabled ? 'Click to mute AI voice' : 'Click to enable AI voice'}
+            onClick={handleEndInterview}
+            className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all text-sm font-medium"
           >
-            {isSpeechEnabled ? (
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d="M3 9V15H7L12 20V4L7 9H3ZM16.5 12C16.5 10.23 15.48 8.71 14 7.97V16.02C15.48 15.29 16.5 13.77 16.5 12ZM14 3.23V5.29C16.89 6.15 19 8.83 19 12S16.89 17.85 14 18.71V20.77C18.01 19.86 21 16.28 21 12S18.01 4.14 14 3.23Z"/>
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d="M16.5 12C16.5 10.23 15.48 8.71 14 7.97V10.18L16.45 12.63C16.48 12.43 16.5 12.21 16.5 12ZM19 12C19 12.94 18.8 13.82 18.46 14.64L19.97 16.15C20.63 14.91 21 13.5 21 12C21 7.72 18.01 4.14 14 3.23V5.29C16.89 6.15 19 8.83 19 12ZM4.27 3L3 4.27L7.73 9H3V15H7L12 20V13.27L16.25 17.52C15.58 18.04 14.83 18.46 14 18.7V20.77C15.38 20.45 16.63 19.82 17.68 18.96L19.73 21L21 19.73L12 10.73L4.27 3ZM12 4L9.91 6.09L12 8.18V4Z"/>
-              </svg>
-            )}
-            <span>{isSpeechEnabled ? 'Voice On' : 'Voice Off'}</span>
-          </button>
-          <button
-            className="quit-interview-button"
-            onClick={handleQuitInterview}
-            disabled={isInterviewComplete}
-            title="End interview early"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <path d="M10 17v-3h4v3h5V7h-5v3h-4V7H5v10h5zm-5 2a2 2 0 0 1-2-2V7c0-1.105.892-2 1.998-2H9V3h6v2h4.002C20.108 5 21 5.895 21 7v10c0 1.105-.892 2-1.998 2z" />
-            </svg>
-            <span>Quit</span>
+            End Interview
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="interview-container">
-        <div className="interview-left">
-          {jobContext && (
-            <aside className="job-brief">
-              <header>
-                <h2>{jobContext.title}</h2>
-                <p>{jobContext.company}</p>
-              </header>
-              <dl>
-                {jobContext.location && (
-                  <div>
-                    <dt>Location</dt>
-                    <dd>{jobContext.location}</dd>
-                  </div>
-                )}
-                {jobContext.type && (
-                  <div>
-                    <dt>Type</dt>
-                    <dd>{jobContext.type}</dd>
-                  </div>
-                )}
-                {(jobContext.interviewDurationMinutes || defaultDurationMinutes) && (
-                  <div>
-                    <dt>Duration</dt>
-                    <dd>{jobContext.interviewDurationMinutes || defaultDurationMinutes} minutes</dd>
-                  </div>
-                )}
-                {jobContext.salary && (
-                  <div>
-                    <dt>Salary</dt>
-                    <dd>{jobContext.salary}</dd>
-                  </div>
-                )}
-              </dl>
-              {Array.isArray(jobContext.tags) && jobContext.tags.length > 0 && (
-                <div className="skills">
-                  <span className="skills-label">Key Skills</span>
-                  <div className="skills-list">
-                    {jobContext.tags.slice(0, 8).map(tag => (
-                      <span key={tag}>{tag}</span>
-                    ))}
+      {/* Main Content Grid */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+        {/* Left Column: AI Avatar & Webcam */}
+        <div className="lg:col-span-3 flex flex-col gap-6 min-h-0">
+          {/* AI Avatar Section */}
+          <div className={`flex-1 relative rounded-3xl overflow-hidden ${theme.glassPanel} border ${theme.border} shadow-2xl group`}>
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80 z-10"></div>
+            
+            {/* AI Visualizer / Avatar Placeholder */}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <div className={`w-32 h-32 rounded-full bg-gradient-to-br ${theme.accent} blur-3xl opacity-20 animate-pulse`}></div>
+              <div className="relative z-20 flex flex-col items-center gap-4">
+                <div className={`w-24 h-24 rounded-2xl bg-gradient-to-br ${theme.accent} p-[2px] shadow-lg shadow-purple-500/20`}>
+                  <div className="w-full h-full rounded-2xl bg-black/90 flex items-center justify-center backdrop-blur-xl">
+                    <span className="text-4xl">🤖</span>
                   </div>
                 </div>
-              )}
-              {jobContext.description && (
-                <div className="job-description">
-                  <span className="skills-label">Highlights</span>
-                  <p>{jobContext.description}</p>
-                </div>
-              )}
-            </aside>
-          )}
-
-          {/* Webcam Section */}
-          <div className="webcam-section">
-            <WebcamCapture />
-            <div className="controls-section">
-              <VoiceRecorder
-                onSpeechResult={handleSpeechResult}
-                isRecording={isRecording}
-                setIsRecording={setIsRecording}
-                setIsListening={setIsListening}
-                disabled={isAiTyping || isInterviewComplete}
-              />
-              <div className="recording-status">
-                {isListening && (
-                  <div className="listening-indicator">
-                    <div className="pulse-dot"></div>
-                    <span>Listening...</span>
+                <div className="text-center">
+                  <h3 className="font-bold text-lg">AI Interviewer</h3>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className={`w-2 h-2 rounded-full ${isAiTyping ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                    <span className="text-xs text-gray-400 font-medium">
+                      {isAiTyping ? 'Speaking...' : 'Listening'}
+                    </span>
                   </div>
-                )}
+                </div>
               </div>
             </div>
+
+            {/* Audio Visualizer Bars (Decorative) */}
+            <div className="absolute bottom-0 left-0 right-0 h-32 flex items-end justify-center gap-1 pb-8 z-20 opacity-50">
+              {[...Array(12)].map((_, i) => (
+                <div 
+                  key={i} 
+                  className={`w-2 rounded-t-full bg-gradient-to-t ${theme.accent}`}
+                  style={{ 
+                    height: isAiTyping ? `${Math.random() * 100}%` : '10%',
+                    transition: 'height 0.2s ease'
+                  }}
+                ></div>
+              ))}
+            </div>
+          </div>
+
+          {/* User Webcam Section */}
+          <div className={`h-64 rounded-3xl overflow-hidden ${theme.glassPanel} border ${theme.border} shadow-xl relative`}>
+            <WebcamCapture />
           </div>
         </div>
 
-        {/* Chat Section */}
-        <div className="chat-section">
-          <ChatInterface
-            messages={messages}
-            currentMessage={currentMessage}
-            setCurrentMessage={setCurrentMessage}
-            onSendMessage={sendMessage}
-            messagesEndRef={messagesEndRef}
-            disabled={isAiTyping || isInterviewComplete}
-            completionReason={completionReason}
-          />
-          
-          {/* Typing Animation */}
-          {isAiTyping && (
-            <div className="ai-typing-container">
-              <div className="ai-message">
-                <div className="ai-avatar">AI</div>
-                <div className="message-bubble ai-bubble">
+        {/* Right Column: Chat Interface */}
+        <div className="lg:col-span-9 flex flex-col min-h-0">
+          <div className={`flex-1 flex flex-col rounded-3xl overflow-hidden ${theme.glassPanel} border ${theme.border} shadow-2xl`}>
+            {/* Chat Messages Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <ChatInterface 
+                messages={messages} 
+                isAiTyping={isAiTyping} 
+                messagesEndRef={messagesEndRef} 
+              />
+              {isAiTyping && (
+                <div className="flex justify-start">
                   <TypingAnimation />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Error Display */}
-          {error && (
-            <div className="error-message">
-              <span>{error}</span>
-              <button onClick={() => setError('')} className="error-close">×</button>
-            </div>
-          )}
-
-          {isInterviewComplete && (
-            <div className="completion-message">
-              <span>
-                {completionReason === 'time-expired'
-                  ? 'Time is up. Feel free to review the transcript or close the session.'
-                  : completionReason === 'user-quit'
-                    ? 'You ended the interview early. Review the conversation or start another session when you are ready.'
-                    : 'The interviewer has wrapped up the session. Feel free to review the transcript or close the session.'}
-              </span>
-              {finalizationStatus === 'pending' && (
-                <div className="finalization-status">
-                  <span>{isFinalizing ? 'Generating your AI feedback...' : 'Preparing your AI feedback...'}</span>
-                </div>
               )}
-              {finalizationStatus === 'failed' && (
-                <div className="finalization-status finalization-status--error">
-                  <span>{finalizationError || 'We could not generate your interview summary.'}</span>
-                  <button type="button" onClick={retryFinalize} disabled={isFinalizing}>
-                    Retry summary
+            </div>
+
+            {/* Input Area */}
+            <div className="p-6 bg-black/20 backdrop-blur-md border-t border-white/5">
+              <div className="relative flex items-end gap-4">
+                <div className="flex-1 relative group">
+                  <textarea
+                    value={currentMessage}
+                    onChange={(e) => setCurrentMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Type your answer here..."
+                    className={`w-full bg-black/30 text-white placeholder-gray-500 rounded-2xl py-4 pl-6 pr-12 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 border border-white/10 transition-all h-[60px] max-h-[120px]`}
+                    disabled={isAiTyping || isInterviewComplete}
+                  />
+                  <button 
+                    onClick={() => sendMessage(currentMessage)}
+                    disabled={!currentMessage.trim() || isAiTyping}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl ${
+                      currentMessage.trim() && !isAiTyping 
+                        ? `bg-gradient-to-r ${theme.accent} text-white shadow-lg shadow-purple-500/20 hover:scale-105` 
+                        : 'bg-white/5 text-gray-500 cursor-not-allowed'
+                    } transition-all duration-200`}
+                  >
+                    <svg className="w-5 h-5 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
                   </button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Footer Instructions */}
-      <div className="interview-footer">
-        <div className="instructions">
-          <div className="instruction-item">
-            <span className="instruction-icon">💬</span>
-            <span><strong>Type your responses</strong> in the chat box below (always available)</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-icon">🎤</span>
-            <span><strong>Optional:</strong> Click the microphone to speak your answers</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-icon">🤖</span>
-            <span>The AI remembers everything and adapts questions accordingly</span>
-          </div>
-          <div className="instruction-item">
-            <span className="instruction-icon">🔊</span>
-            <span>AI responses are spoken aloud automatically</span>
+                <VoiceRecorder 
+                  onSpeechResult={handleTranscript}
+                  isRecording={isRecording}
+                  setIsRecording={setIsRecording}
+                  setIsListening={setIsListening}
+                  disabled={isAiTyping || isInterviewComplete}
+                />
+              </div>
+              
+              <div className="mt-3 flex justify-between items-center px-2">
+                <p className="text-xs text-gray-500">
+                  Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 font-mono text-[10px]">Enter</kbd> to send
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isListening ? 'bg-red-500 animate-pulse' : 'bg-gray-600'}`}></span>
+                  <span className="text-xs text-gray-500">
+                    {isListening ? 'Microphone Active' : 'Microphone Ready'}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Finalization Overlay */}
+      {isFinalizing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className={`max-w-md w-full p-8 rounded-3xl ${theme.glassPanel} border ${theme.border} text-center`}>
+            <div className="w-16 h-16 mx-auto mb-6 relative">
+              <div className={`absolute inset-0 rounded-full border-4 border-t-transparent ${theme.accentText} animate-spin`}></div>
+              <div className="absolute inset-0 flex items-center justify-center text-2xl">✨</div>
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Finalizing Interview</h2>
+            <p className="text-gray-400">Analyzing your responses and generating feedback...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

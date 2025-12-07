@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useState } from 'react';
-import './WebcamCapture.css';
+import React, { useRef, useEffect, useState, useContext } from 'react';
+import { ThemeContext } from '../../contexts/ThemeContext';
 
 const WebcamCapture = () => {
+  const { theme } = useContext(ThemeContext);
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState('');
@@ -49,41 +50,24 @@ const WebcamCapture = () => {
   };
 
   return (
-    <div className="webcam-container">
-      <div className="webcam-header">
-        <h3>Video Feed</h3>
-        <div className="webcam-controls">
-          {stream ? (
-            <button onClick={stopWebcam} className="webcam-btn stop-btn">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-              </svg>
-              Stop
-            </button>
-          ) : (
-            <button onClick={startWebcam} className="webcam-btn start-btn">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
-              </svg>
-              Start
-            </button>
-          )}
-        </div>
-      </div>
-      
-      <div className="video-wrapper">
+    <div className="flex flex-col h-full relative">
+      {/* Video Feed */}
+      <div className="flex-1 relative bg-black/40 overflow-hidden">
         {isLoading && (
-          <div className="webcam-loading">
-            <div className="loading-spinner"></div>
-            <p>Starting webcam...</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
+            <div className={`w-8 h-8 border-2 border-t-transparent ${theme.accentText} rounded-full animate-spin`}></div>
+            <p className={`text-sm ${theme.textMuted}`}>Starting webcam...</p>
           </div>
         )}
         
         {error && (
-          <div className="webcam-error">
-            <div className="error-icon">📷</div>
-            <p>{error}</p>
-            <button onClick={startWebcam} className="retry-btn">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center z-10">
+            <div className="text-4xl opacity-50">📷</div>
+            <p className="text-red-400 text-sm">{error}</p>
+            <button 
+              onClick={startWebcam} 
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${theme.glassPanel} border ${theme.border} hover:bg-white/10 transition-colors`}
+            >
               Try Again
             </button>
           </div>
@@ -95,15 +79,40 @@ const WebcamCapture = () => {
             autoPlay
             playsInline
             muted
-            className={`webcam-video ${isLoading ? 'loading' : ''}`}
+            className={`w-full h-full object-cover transition-opacity duration-500 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
           />
         )}
         
         {stream && !isLoading && (
-          <div className="recording-indicator">
-            <div className="red-dot"></div>
-            <span>LIVE</span>
+          <div className="absolute top-4 right-4 flex items-center gap-2 px-2 py-1 rounded-md bg-black/50 backdrop-blur-sm border border-white/10">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+            <span className="text-[10px] font-bold tracking-wider text-white">LIVE</span>
           </div>
+        )}
+      </div>
+
+      {/* Controls Overlay (Optional - can be removed if controls are elsewhere) */}
+      <div className="absolute top-4 left-4 z-20">
+        {stream ? (
+          <button 
+            onClick={stopWebcam} 
+            className="p-2 rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 hover:bg-red-500/20 hover:border-red-500/50 transition-all group"
+            title="Stop Camera"
+          >
+            <svg className="w-4 h-4 text-white group-hover:text-red-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        ) : (
+          <button 
+            onClick={startWebcam} 
+            className={`p-2 rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 hover:bg-green-500/20 hover:border-green-500/50 transition-all group`}
+            title="Start Camera"
+          >
+            <svg className="w-4 h-4 text-white group-hover:text-green-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+            </svg>
+          </button>
         )}
       </div>
     </div>

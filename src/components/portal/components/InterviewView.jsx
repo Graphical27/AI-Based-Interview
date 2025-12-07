@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import InterviewPage from '../../InterviewPage/InterviewPage';
 import PreInterviewSetup from '../../InterviewPage/PreInterviewSetup';
+import { ThemeContext } from '../../../contexts/ThemeContext';
 
 const InterviewView = () => {
+  const { theme } = useContext(ThemeContext);
   const [currentStage, setCurrentStage] = useState('overview'); // overview, setup, interview
   const [interviewData, setInterviewData] = useState(null);
 
@@ -23,17 +25,17 @@ const InterviewView = () => {
   if (currentStage === 'interview') {
     return (
       <div className="h-full">
-        <div className="mb-4 p-4 bg-gradient-to-r from-gray-900/50 to-black border border-gray-800 rounded-xl">
+        <div className={`mb-4 p-4 ${theme.glassPanel} border ${theme.border} rounded-xl`}>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-white">Interview in Progress</h3>
-              <p className="text-sm text-gray-400">
+              <h3 className={`text-lg font-semibold ${theme.text}`}>Interview in Progress</h3>
+              <p className={`text-sm ${theme.textMuted}`}>
                 {interviewData?.role} - {interviewData?.experience} experience
               </p>
             </div>
             <button
               onClick={handleInterviewEnd}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-500/50 rounded-lg transition-all"
+              className={`px-4 py-2 text-sm ${theme.textMuted} hover:text-red-400 border ${theme.border} hover:border-red-500/50 rounded-lg transition-all`}
             >
               End Interview
             </button>
@@ -52,7 +54,7 @@ const InterviewView = () => {
         <div className="mb-6">
           <button
             onClick={() => setCurrentStage('overview')}
-            className="flex items-center gap-2 text-gray-400 hover:text-green-400 text-sm transition-all"
+            className={`flex items-center gap-2 ${theme.textMuted} hover:text-green-400 text-sm transition-all`}
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
@@ -70,7 +72,7 @@ const InterviewView = () => {
   return (
     <div className="space-y-8">
       {/* Hero Section */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-500/10 to-teal-500/10 border border-green-500/20">
+      <div className={`relative overflow-hidden rounded-3xl ${theme.glassPanel} border ${theme.border}`}>
         <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 to-teal-400/5"></div>
         <div className="relative p-8 lg:p-12">
           <div className="max-w-3xl">
@@ -81,46 +83,46 @@ const InterviewView = () => {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2">AI Interview Practice</h1>
-                <p className="text-gray-400 text-lg">Master your interviews with personalized AI coaching</p>
+                <h1 className={`text-3xl lg:text-4xl font-bold ${theme.text} mb-2`}>AI Interview Practice</h1>
+                <p className={`${theme.textMuted} text-lg`}>Master your interviews with personalized AI coaching</p>
               </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-              <div className="p-4 rounded-xl bg-black/20 border border-gray-800/50">
+              <div className={`p-4 rounded-xl ${theme.inputBg} border ${theme.border}`}>
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
                     <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                     </svg>
                   </div>
-                  <h3 className="font-semibold text-white">Real-time Feedback</h3>
+                  <h3 className={`font-semibold ${theme.text}`}>Real-time Feedback</h3>
                 </div>
-                <p className="text-sm text-gray-400">Get instant analysis of your responses and communication skills</p>
+                <p className={`text-sm ${theme.textMuted}`}>Get instant analysis of your responses and communication skills</p>
               </div>
               
-              <div className="p-4 rounded-xl bg-black/20 border border-gray-800/50">
+              <div className={`p-4 rounded-xl ${theme.inputBg} border ${theme.border}`}>
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
                     <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                   </div>
-                  <h3 className="font-semibold text-white">Customized Questions</h3>
+                  <h3 className={`font-semibold ${theme.text}`}>Customized Questions</h3>
                 </div>
-                <p className="text-sm text-gray-400">Questions tailored to your role, experience, and target companies</p>
+                <p className={`text-sm ${theme.textMuted}`}>Questions tailored to your role, experience, and target companies</p>
               </div>
               
-              <div className="p-4 rounded-xl bg-black/20 border border-gray-800/50">
+              <div className={`p-4 rounded-xl ${theme.inputBg} border ${theme.border}`}>
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
                     <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
                     </svg>
                   </div>
-                  <h3 className="font-semibold text-white">Performance Analytics</h3>
+                  <h3 className={`font-semibold ${theme.text}`}>Performance Analytics</h3>
                 </div>
-                <p className="text-sm text-gray-400">Track your progress and identify areas for improvement</p>
+                <p className={`text-sm ${theme.textMuted}`}>Track your progress and identify areas for improvement</p>
               </div>
             </div>
           </div>
@@ -129,7 +131,7 @@ const InterviewView = () => {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 hover:border-green-400/30 transition-all group">
+        <div className={`p-6 rounded-2xl ${theme.glassPanel} border ${theme.border} hover:border-green-400/30 transition-all group`}>
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-400 to-teal-400 flex items-center justify-center shadow-lg shadow-green-400/25">
               <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 24 24">
@@ -137,11 +139,11 @@ const InterviewView = () => {
               </svg>
             </div>
             <div>
-              <h3 className="text-xl font-semibold text-white">Start Mock Interview</h3>
-              <p className="text-gray-400">Begin a full interview simulation</p>
+              <h3 className={`text-xl font-semibold ${theme.text}`}>Start Mock Interview</h3>
+              <p className={`${theme.textMuted}`}>Begin a full interview simulation</p>
             </div>
           </div>
-          <p className="text-gray-300 mb-6">
+          <p className={`${theme.textMuted} mb-6`}>
             Experience a complete interview process with AI-powered questions, real-time feedback, 
             and detailed performance analysis.
           </p>
@@ -153,7 +155,7 @@ const InterviewView = () => {
           </button>
         </div>
 
-        <div className="p-6 rounded-2xl bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 hover:border-purple-400/30 transition-all group">
+        <div className={`p-6 rounded-2xl ${theme.glassPanel} border ${theme.border} hover:border-purple-400/30 transition-all group`}>
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center shadow-lg shadow-purple-400/25">
               <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -162,15 +164,15 @@ const InterviewView = () => {
               </svg>
             </div>
             <div>
-              <h3 className="text-xl font-semibold text-white">Practice History</h3>
-              <p className="text-gray-400">Review your past interview sessions</p>
+              <h3 className={`text-xl font-semibold ${theme.text}`}>Practice History</h3>
+              <p className={`${theme.textMuted}`}>Review your past interview sessions</p>
             </div>
           </div>
-          <p className="text-gray-300 mb-6">
+          <p className={`${theme.textMuted} mb-6`}>
             Access detailed reports from previous interviews, track your improvement over time, 
             and identify patterns in your performance.
           </p>
-          <button className="w-full px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all group-hover:scale-[1.02] border border-gray-700">
+          <button className={`w-full px-6 py-3 ${theme.inputBg} hover:bg-gray-500/10 ${theme.text} font-semibold rounded-xl transition-all group-hover:scale-[1.02] border ${theme.border}`}>
             View History
           </button>
         </div>
@@ -179,7 +181,7 @@ const InterviewView = () => {
       {/* Interview Types */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-white">Interview Types</h2>
+          <h2 className={`text-2xl font-bold ${theme.text}`}>Interview Types</h2>
           <button className="text-green-400 hover:text-green-300 text-sm font-medium flex items-center gap-2">
             View all
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -245,7 +247,7 @@ const InterviewView = () => {
               sessions: '4 sessions'
             }
           ].map((type, index) => (
-            <div key={index} className={`p-6 rounded-2xl bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 hover:border-${type.borderColor} transition-all group cursor-pointer`}>
+            <div key={index} className={`p-6 rounded-2xl ${theme.glassPanel} border ${theme.border} hover:border-${type.borderColor} transition-all group cursor-pointer`}>
               <div className="flex items-center gap-3 mb-4">
                 <div className={`w-10 h-10 rounded-xl bg-${type.bgColor} flex items-center justify-center border border-${type.borderColor}`}>
                   <svg className={`w-5 h-5 text-${type.color.split(' ')[1]}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -253,12 +255,12 @@ const InterviewView = () => {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white">{type.title}</h3>
-                  <p className="text-xs text-gray-500">{type.sessions}</p>
+                  <h3 className={`font-semibold ${theme.text}`}>{type.title}</h3>
+                  <p className={`text-xs ${theme.textMuted}`}>{type.sessions}</p>
                 </div>
               </div>
-              <p className="text-sm text-gray-400 mb-4">{type.description}</p>
-              <button className="w-full px-4 py-2 bg-gray-800/50 hover:bg-gray-700/50 text-green-400 text-sm font-medium rounded-lg transition-all border border-gray-700 hover:border-green-500/30">
+              <p className={`text-sm ${theme.textMuted} mb-4`}>{type.description}</p>
+              <button className={`w-full px-4 py-2 ${theme.inputBg} hover:bg-gray-500/10 text-green-400 text-sm font-medium rounded-lg transition-all border ${theme.border} hover:border-green-500/30`}>
                 Practice Now
               </button>
             </div>
@@ -268,8 +270,8 @@ const InterviewView = () => {
 
       {/* Recent Activity */}
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-white">Recent Activity</h2>
-        <div className="bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 rounded-2xl p-6">
+        <h2 className={`text-2xl font-bold ${theme.text}`}>Recent Activity</h2>
+        <div className={`${theme.glassPanel} border ${theme.border} rounded-2xl p-6`}>
           <div className="space-y-4">
             {[
               {
@@ -294,7 +296,7 @@ const InterviewView = () => {
                 status: 'incomplete'
               }
             ].map((activity, index) => (
-              <div key={index} className="flex items-center justify-between p-4 rounded-xl bg-black/20 border border-gray-800/30">
+              <div key={index} className={`flex items-center justify-between p-4 rounded-xl ${theme.inputBg} border ${theme.border}`}>
                 <div className="flex items-center gap-4">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                     activity.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
@@ -302,8 +304,8 @@ const InterviewView = () => {
                     {activity.status === 'completed' ? '✓' : '⏳'}
                   </div>
                   <div>
-                    <h4 className="font-medium text-white">{activity.type}</h4>
-                    <p className="text-sm text-gray-400">{activity.date} • {activity.duration}</p>
+                    <h4 className={`font-medium ${theme.text}`}>{activity.type}</h4>
+                    <p className={`text-sm ${theme.textMuted}`}>{activity.date} • {activity.duration}</p>
                   </div>
                 </div>
                 <div className="text-right">

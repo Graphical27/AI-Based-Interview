@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api';
+import { ThemeContext } from '../../../contexts/ThemeContext';
 function relativeTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -25,6 +26,7 @@ const categories = ['All','Engineering','Data','Product','Design'];
 const types = ['All','Full-time','Contract','Part-time','Internship'];
 
 const JobsView = () => {
+  const { theme } = useContext(ThemeContext);
   const navigate = useNavigate();
   const [query,setQuery] = useState('');
   const [category,setCategory] = useState('All');
@@ -175,11 +177,11 @@ const JobsView = () => {
           { label: 'Urgent Hiring', value: jobs.filter(j => j.urgent).length, icon: '⚡', color: 'from-orange-400 to-orange-600' },
           { label: 'Verified', value: jobs.filter(j => j.verified).length, icon: '✅', color: 'from-purple-400 to-purple-600' }
         ].map((stat, index) => (
-          <div key={index} className="p-6 rounded-2xl bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 hover:border-gray-700/50 transition-all group">
+          <div key={index} className={`p-6 rounded-2xl ${theme.glassPanel} border ${theme.border} hover:border-gray-500/30 transition-all group`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-400 text-sm font-medium">{stat.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                <p className={`${theme.textMuted} text-sm font-medium`}>{stat.label}</p>
+                <p className={`text-2xl font-bold ${theme.text} mt-1`}>{stat.value}</p>
               </div>
               <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} opacity-20 group-hover:opacity-30 transition-opacity flex items-center justify-center text-xl`}>
                 {stat.icon}
@@ -190,12 +192,12 @@ const JobsView = () => {
       </div>
 
       {/* Enhanced Search and Filters */}
-      <div className="bg-gradient-to-br from-gray-900/50 to-black rounded-2xl p-8 border border-gray-800/50 backdrop-blur-sm">
+      <div className={`${theme.glassPanel} rounded-2xl p-8 border ${theme.border} backdrop-blur-sm`}>
         <div className="space-y-6">
           {/* Main Search */}
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-5 h-5 ${theme.textMuted}`} fill="currentColor" viewBox="0 0 24 24">
                 <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
               </svg>
             </div>
@@ -203,12 +205,12 @@ const JobsView = () => {
               value={query} 
               onChange={e=>setQuery(e.target.value)} 
               placeholder="Search jobs, companies, skills, or locations..." 
-              className="w-full pl-12 pr-4 py-4 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-200 placeholder-gray-400 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all text-lg backdrop-blur-sm"
+              className={`w-full pl-12 pr-4 py-4 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.text} ${theme.placeholder} focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all text-lg backdrop-blur-sm`}
             />
             {query && (
               <button 
                 onClick={() => setQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                className={`absolute right-3 top-1/2 -translate-y-1/2 ${theme.textMuted} hover:text-white p-1`}
               >
                 ✕
               </button>
@@ -220,7 +222,7 @@ const JobsView = () => {
             <select 
               value={category} 
               onChange={e=>setCategory(e.target.value)} 
-              className="bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-gray-200 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all backdrop-blur-sm"
+              className={`${theme.inputBg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all backdrop-blur-sm`}
             >
               {categories.map(c=> <option key={c} value={c}>{c} Category</option>)}
             </select>
@@ -228,12 +230,12 @@ const JobsView = () => {
             <select 
               value={jobType} 
               onChange={e=>setJobType(e.target.value)} 
-              className="bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-gray-200 focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all backdrop-blur-sm"
+              className={`${theme.inputBg} border ${theme.border} rounded-xl px-4 py-3 ${theme.text} focus:border-green-400 focus:ring-2 focus:ring-green-400/20 outline-none transition-all backdrop-blur-sm`}
             >
               {types.map(t=> <option key={t} value={t}>{t === 'All' ? 'All Job Types' : t}</option>)}
             </select>
 
-            <label className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-300 hover:bg-gray-700/50 transition-all cursor-pointer">
+            <label className={`flex items-center gap-3 px-4 py-3 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.textMuted} hover:bg-gray-500/10 transition-all cursor-pointer`}>
               <input
                 type="checkbox"
                 className="rounded border-gray-600 bg-gray-700 text-green-400 focus:ring-green-400/20 focus:ring-offset-gray-800"
@@ -243,7 +245,7 @@ const JobsView = () => {
               <span className="text-sm font-medium">Remote only</span>
             </label>
 
-            <label className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-300 hover:bg-gray-700/50 transition-all cursor-pointer">
+            <label className={`flex items-center gap-3 px-4 py-3 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.textMuted} hover:bg-gray-500/10 transition-all cursor-pointer`}>
               <input
                 type="checkbox"
                 className="rounded border-gray-600 bg-gray-700 text-orange-400 focus:ring-orange-400/20 focus:ring-offset-gray-800"
@@ -253,7 +255,7 @@ const JobsView = () => {
               <span className="text-sm font-medium">Urgent hiring</span>
             </label>
 
-            <label className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-300 hover:bg-gray-700/50 transition-all cursor-pointer">
+            <label className={`flex items-center gap-3 px-4 py-3 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.textMuted} hover:bg-gray-500/10 transition-all cursor-pointer`}>
               <input
                 type="checkbox"
                 className="rounded border-gray-600 bg-gray-700 text-blue-400 focus:ring-blue-400/20 focus:ring-offset-gray-800"
@@ -265,7 +267,7 @@ const JobsView = () => {
 
             <button 
               onClick={() => {setQuery(''); setCategory('All'); setJobType('All'); setFilters({remote: false, urgent: false, verified: false});}}
-              className="px-6 py-3 text-sm font-medium text-gray-400 hover:text-green-400 border border-gray-700 hover:border-green-400/50 rounded-xl transition-all backdrop-blur-sm"
+              className={`px-6 py-3 text-sm font-medium ${theme.textMuted} hover:text-green-400 border ${theme.border} hover:border-green-400/50 rounded-xl transition-all backdrop-blur-sm`}
             >
               Clear All
             </button>
@@ -277,11 +279,11 @@ const JobsView = () => {
         {/* Enhanced Job Grid */}
         <div className="xl:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">
+            <h2 className={`text-2xl font-bold ${theme.text}`}>
               {filtered.length} {filtered.length === 1 ? 'Job' : 'Jobs'} Found
               {query && <span className="text-green-400 ml-2">for "{query}"</span>}
             </h2>
-            <select className="bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-200 focus:border-green-400 outline-none backdrop-blur-sm">
+            <select className={`${theme.inputBg} border ${theme.border} rounded-xl px-4 py-2 text-sm ${theme.text} focus:border-green-400 outline-none backdrop-blur-sm`}>
               <option>Sort by: Relevance</option>
               <option>Sort by: Date Posted</option>
               <option>Sort by: Salary (High to Low)</option>
@@ -291,15 +293,15 @@ const JobsView = () => {
 
           {/* Enhanced Job Cards */}
           <div className="space-y-6">
-            {loading && <p className="text-gray-400">Loading jobs...</p>}
+            {loading && <p className={`${theme.textMuted}`}>Loading jobs...</p>}
             {error && <p className="text-red-400">{error}</p>}
             {!loading && !error && paged.map(job => (
               <div 
                 key={job._id}
-                className={`group relative bg-gradient-to-br from-gray-900/80 to-black border rounded-2xl p-6 cursor-pointer transition-all hover:shadow-xl hover:shadow-black/20 ${
+                className={`group relative ${theme.glassPanel} border rounded-2xl p-6 cursor-pointer transition-all hover:shadow-xl hover:shadow-black/20 ${
                   selectedJob?._id === job._id 
                     ? 'border-green-400 ring-2 ring-green-400/20 shadow-lg shadow-green-400/10' 
-                    : 'border-gray-800/50 hover:border-gray-700'
+                    : `${theme.border} hover:border-gray-500/30`
                 }`}
                 onClick={() => setSelectedJob(job)}
               >
@@ -311,13 +313,13 @@ const JobsView = () => {
                 )}
 
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-2xl shadow-lg">
+                  <div className={`w-14 h-14 rounded-xl ${theme.iconBg} border ${theme.border} flex items-center justify-center text-2xl shadow-lg`}>
                     {job.logo}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="text-xl font-bold text-white mb-1 group-hover:text-green-400 transition-colors">{job.title}</h3>
+                        <h3 className={`text-xl font-bold ${theme.text} mb-1 group-hover:text-green-400 transition-colors`}>{job.title}</h3>
                         <div className="flex items-center gap-2 mb-3">
                           <p className="text-green-400 font-semibold">{job.company}</p>
                           {job.verified && (
@@ -338,13 +340,13 @@ const JobsView = () => {
                         }`}>
                           {job.type}
                         </span>
-                        <p className="text-xs text-gray-500 mt-2">{relativeTime(job.postedAt)}</p>
+                        <p className={`text-xs ${theme.textMuted} mt-2`}>{relativeTime(job.postedAt)}</p>
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-300 mb-4">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 text-sm ${theme.textMuted} mb-4`}>
                       <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <svg className={`w-4 h-4 ${theme.textMuted}`} fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
                         </svg>
                         {job.location}
@@ -384,22 +386,22 @@ const JobsView = () => {
                     
                     <div className="flex flex-wrap gap-2 mb-4">
                       {(job.tags||[]).slice(0, 4).map(skill => (
-                        <span key={skill} className="px-3 py-1 bg-gray-800/60 text-gray-300 text-xs rounded-lg border border-gray-700/50 hover:bg-gray-700/60 transition-colors">
+                        <span key={skill} className={`px-3 py-1 ${theme.inputBg} ${theme.textMuted} text-xs rounded-lg border ${theme.border} hover:bg-gray-500/10 transition-colors`}>
                           {skill}
                         </span>
                       ))}
                       {Array.isArray(job.tags) && job.tags.length > 4 && (
-                        <span className="px-3 py-1 bg-gray-800/60 text-gray-400 text-xs rounded-lg border border-gray-700/50">
+                        <span className={`px-3 py-1 ${theme.inputBg} ${theme.textMuted} text-xs rounded-lg border ${theme.border}`}>
                           +{(job.tags||[]).length - 4} more
                         </span>
                       )}
                     </div>
                     
-                    <p className="text-gray-400 text-sm leading-relaxed line-clamp-2">{job.description}</p>
+                    <p className={`${theme.textMuted} text-sm leading-relaxed line-clamp-2`}>{job.description}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-gray-800/50">
+                <div className={`flex items-center justify-between pt-4 border-t ${theme.border}`}>
                   <div className="flex gap-3">
                     {(() => {
                       const hasApplied = myApplications.some(app => app.job && app.job._id === job._id);
@@ -415,7 +417,7 @@ const JobsView = () => {
                             >
                               Practice Again
                             </button>
-                            <div className="px-3 py-2 text-xs text-gray-400 border border-gray-700 rounded-lg">
+                            <div className={`px-3 py-2 text-xs ${theme.textMuted} border ${theme.border} rounded-lg`}>
                               Status: {application.status}
                               {typeof application.interviewScore === 'number' && (
                                 <span className="ml-2 text-blue-300">Score: {application.interviewScore.toFixed(1)}/10</span>
@@ -440,7 +442,7 @@ const JobsView = () => {
                       className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm ${
                         saved.has(job._id) 
                           ? 'bg-green-400/20 text-green-400 border-green-400/30' 
-                          : 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 border-gray-700'
+                          : `${theme.inputBg} hover:bg-gray-500/10 ${theme.textMuted} ${theme.border}`
                       }`}
                     >
                       <svg className="w-4 h-4" fill={saved.has(job._id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
@@ -472,7 +474,7 @@ const JobsView = () => {
               <button 
                 disabled={page===1} 
                 onClick={()=>setPage(p=>Math.max(1,p-1))} 
-                className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-400 hover:text-white hover:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all backdrop-blur-sm"
+                className={`px-4 py-2 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.textMuted} hover:text-white hover:bg-gray-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all backdrop-blur-sm`}
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
@@ -485,7 +487,7 @@ const JobsView = () => {
                   className={`px-4 py-2 rounded-xl border transition-all ${
                     page === pageNum 
                       ? 'bg-green-400 text-black border-green-400 shadow-lg shadow-green-400/25' 
-                      : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700/50 backdrop-blur-sm'
+                      : `${theme.inputBg} ${theme.border} ${theme.textMuted} hover:text-white hover:bg-gray-500/10 backdrop-blur-sm`
                   }`}
                 >
                   {pageNum}
@@ -494,7 +496,7 @@ const JobsView = () => {
               <button 
                 disabled={page===totalPages} 
                 onClick={()=>setPage(p=>Math.min(totalPages,p+1))} 
-                className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-gray-400 hover:text-white hover:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all backdrop-blur-sm"
+                className={`px-4 py-2 ${theme.inputBg} border ${theme.border} rounded-xl ${theme.textMuted} hover:text-white hover:bg-gray-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all backdrop-blur-sm`}
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
@@ -507,13 +509,13 @@ const JobsView = () => {
         {/* Enhanced Job Details Panel */}
         <div className="xl:col-span-1">
           {selectedJob ? (
-            <div className="bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 rounded-2xl p-6 sticky top-6 backdrop-blur-sm">
+            <div className={`${theme.glassPanel} border ${theme.border} rounded-2xl p-6 sticky top-6 backdrop-blur-sm`}>
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-3xl shadow-lg">
+                <div className={`w-16 h-16 rounded-2xl ${theme.iconBg} border ${theme.border} flex items-center justify-center text-3xl shadow-lg`}>
                   {selectedJob.logo}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-1">{selectedJob.title}</h3>
+                  <h3 className={`text-xl font-bold ${theme.text} mb-1`}>{selectedJob.title}</h3>
                   <div className="flex items-center gap-2">
                     <p className="text-green-400 font-semibold">{selectedJob.company}</p>
                     {selectedJob.verified && (
@@ -536,21 +538,21 @@ const JobsView = () => {
                   { icon: '⏱️', label: 'Interview Duration', value: `${resolveInterviewDuration(selectedJob)} minutes` },
                   { icon: '📅', label: 'Posted', value: new Date(selectedJob.postedAt).toLocaleDateString() }
                 ].map((item, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-gray-800/30">
+                  <div key={index} className={`flex items-center gap-3 p-3 rounded-xl ${theme.inputBg} border ${theme.border}`}>
                     <span className="text-lg">{item.icon}</span>
                     <div>
                       <p className="text-xs text-gray-500 font-medium">{item.label}</p>
-                      <p className="text-sm text-gray-200">{item.value}</p>
+                      <p className={`text-sm ${theme.text}`}>{item.value}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
               <div className="mb-6">
-                <h4 className="text-sm font-semibold text-white mb-3">Required Skills</h4>
+                <h4 className={`text-sm font-semibold ${theme.text} mb-3`}>Required Skills</h4>
                 <div className="flex flex-wrap gap-2">
                   {(selectedJob.tags||[]).map(skill => (
-                    <span key={skill} className="px-3 py-1.5 bg-gray-800/60 text-gray-300 text-xs rounded-lg border border-gray-700/50">
+                    <span key={skill} className={`px-3 py-1.5 ${theme.inputBg} ${theme.textMuted} text-xs rounded-lg border ${theme.border}`}>
                       {skill}
                     </span>
                   ))}
@@ -558,8 +560,8 @@ const JobsView = () => {
               </div>
 
               <div className="mb-6">
-                <h4 className="text-sm font-semibold text-white mb-3">Job Description</h4>
-                <p className="text-gray-400 text-sm leading-relaxed">{selectedJob.description}</p>
+                <h4 className={`text-sm font-semibold ${theme.text} mb-3`}>Job Description</h4>
+                <p className={`${theme.textMuted} text-sm leading-relaxed`}>{selectedJob.description}</p>
               </div>
 
               <div className="space-y-3">
@@ -575,7 +577,7 @@ const JobsView = () => {
                   className={`w-full font-medium py-3 px-4 rounded-xl transition-all backdrop-blur-sm ${
                     saved.has(selectedJob._id)
                       ? 'bg-green-400/20 text-green-400 border border-green-400/30'
-                      : 'bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 border border-gray-700'
+                      : `${theme.inputBg} hover:bg-gray-500/10 ${theme.textMuted} border ${theme.border}`
                   }`}
                 >
                   {saved.has(selectedJob._id) ? 'Saved ✓' : 'Save for Later'}
@@ -586,14 +588,14 @@ const JobsView = () => {
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-gray-900/80 to-black border border-gray-800/50 rounded-2xl p-8 text-center sticky top-6 backdrop-blur-sm">
+            <div className={`${theme.glassPanel} border ${theme.border} rounded-2xl p-8 text-center sticky top-6 backdrop-blur-sm`}>
               <div className="text-gray-500 mb-6">
                 <svg className="w-20 h-20 mx-auto mb-4 opacity-50" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M20 6h-2.18C17.4 4.84 16.3 4 15 4H9c-1.3 0-2.4.84-2.82 2H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/>
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-white mb-3">Select a Job</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <h3 className={`text-xl font-bold ${theme.text} mb-3`}>Select a Job</h3>
+              <p className={`${theme.textMuted} text-sm leading-relaxed`}>
                 Click on any job from the list to view detailed information, requirements, and apply directly.
               </p>
             </div>
